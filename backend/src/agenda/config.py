@@ -1,0 +1,24 @@
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    database_url: str = "postgresql+psycopg://agenda:agenda@localhost:5432/agenda"
+    openai_api_key: str = ""
+    # Sem default no código: definidos por variável de ambiente (ver .env.example).
+    openai_modelo_extracao: str
+    openai_modelo_reconciliacao: str
+    s3_endpoint: str = "http://localhost:9000"
+    s3_bucket: str = "flyers"
+    s3_access_key: str = "minioadmin"
+    s3_secret_key: str = "minioadmin"
+    chave_sessao: str = ""  # chave Fernet das sessões do scraper
+    intervalo_coleta_horas: int = 6
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
