@@ -1,0 +1,3 @@
+{"__typename": "GraphImage", "shortcode": "IMG0001", "taken_at_timestamp": 1760007200, "is_video": false,
+ "display_url": "https://cdn.example/img.jpg",
+ "edge_media_to_caption": {"edges": []}}

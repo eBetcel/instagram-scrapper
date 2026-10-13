@@ -1,0 +1,8 @@
+{"__typename": "GraphSidecar", "shortcode": "CAR0001", "taken_at_timestamp": 1760000000, "is_video": false,
+ "display_url": "https://cdn.example/car_capa.jpg",
+ "edge_media_to_caption": {"edges": [{"node": {"text": "Show da banda X dia 20/10 no Bar Y"}}]},
+ "edge_sidecar_to_children": {"edges": [
+  {"node": {"__typename": "GraphImage", "is_video": false, "display_url": "https://cdn.example/car_1.jpg"}},
+  {"node": {"__typename": "GraphImage", "is_video": false, "display_url": "https://cdn.example/car_2.jpg"}},
+  {"node": {"__typename": "GraphVideo", "is_video": true, "display_url": "https://cdn.example/car_3_capa.jpg", "video_url": "https://cdn.example/car_3.mp4"}}]},
+ "pinned_for_users": []}
