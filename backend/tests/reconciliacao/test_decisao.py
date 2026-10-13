@@ -108,18 +108,20 @@ def test_resposta_invalida_tenta_de_novo(session):
 
 def test_resposta_invalida_duas_vezes_levanta(session):
     ev = evento(session, "Festival Jazz na Praça")
-    cliente = ClienteFalso(_resp(parsed=None), _resp(parsed=None))
-    with pytest.raises(RespostaInvalida):
-        OpenAIReconciliador(cliente, "m").decidir(E, [ev], post(session))
+    cliente = ClienteFalso(_resp(parsed=None, entrada=10, saida=1), _resp(parsed=None, entrada=20, saida=2))
+    with pytest.raises(RespostaInvalida) as exc:
+        OpenAIReconciliador(cliente, "gpt-4.1-nano").decidir(E, [ev], post(session))
     assert len(cliente.chamadas) == 2
+    assert exc.value.uso == Uso(30, 3, calcular_custo("gpt-4.1-nano", 30, 3), "gpt-4.1-nano")
 
 
 def test_evento_id_fora_dos_candidatos_tenta_de_novo_e_levanta(session):
     ev = evento(session, "Festival Jazz na Praça")
     cliente = ClienteFalso(_resp(_d("DUPLICADO", ev.id + 999)), _resp(_d("ATUALIZACAO", None)))
-    with pytest.raises(RespostaInvalida):
+    with pytest.raises(RespostaInvalida) as exc:
         OpenAIReconciliador(cliente, "m").decidir(E, [ev], post(session))
     assert len(cliente.chamadas) == 2
+    assert (exc.value.uso.tokens_entrada, exc.value.uso.tokens_saida) == (200, 40)
 
 
 def test_evento_id_invalido_depois_valido(session):

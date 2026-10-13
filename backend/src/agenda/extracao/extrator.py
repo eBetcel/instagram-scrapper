@@ -3,7 +3,7 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol, TypeVar
 
 from openai import ContentFilterFinishReasonError, LengthFinishReasonError
 from pydantic import ValidationError
@@ -16,6 +16,8 @@ from agenda.imagens import redimensionar
 log = logging.getLogger(__name__)
 
 TENTATIVAS = 2
+
+T = TypeVar("T")
 
 PROMPT_SISTEMA = """\
 Você extrai eventos culturais de posts de Instagram (legenda e imagens de flyers) \
@@ -59,7 +61,11 @@ class Resultado:
 
 
 class RespostaInvalida(Exception):
-    pass
+    """Resposta fora do schema apos todas as tentativas; `uso` soma o gasto delas."""
+
+    def __init__(self, msg: str, uso: Uso | None = None):
+        super().__init__(msg)
+        self.uso = uso
 
 
 class Extrator(Protocol):
@@ -81,6 +87,48 @@ def _tokens(usage: Any) -> tuple[int, int]:
     if usage is None:
         return 0, 0
     return usage.prompt_tokens, usage.completion_tokens
+
+
+def parse_com_retentativa(
+    client: Any,
+    modelo: str,
+    mensagens: list[dict[str, Any]],
+    response_format: type[T],
+    validar: Callable[[T], bool] = lambda parsed: True,
+) -> tuple[T, Uso]:
+    """Chama `chat.completions.parse` ate TENTATIVAS vezes. Erro de parse do SDK,
+    recusa, resposta sem `parsed` ou `validar` falso contam como invalidas; erros
+    de transporte propagam. O uso devolvido (ou levado em RespostaInvalida) soma
+    todas as tentativas."""
+    entrada = saida = 0
+
+    def uso() -> Uso:
+        return Uso(entrada, saida, calcular_custo(modelo, entrada, saida), modelo)
+
+    for tentativa in range(1, TENTATIVAS + 1):
+        try:
+            resp = client.chat.completions.parse(
+                model=modelo, messages=mensagens, response_format=response_format
+            )
+        except (ValidationError, LengthFinishReasonError, ContentFilterFinishReasonError) as e:
+            completion = getattr(e, "completion", None)
+            e_in, e_out = _tokens(getattr(completion, "usage", None))
+            entrada += e_in
+            saida += e_out
+            log.warning("Resposta inválida (tentativa %d): %s", tentativa, type(e).__name__)
+            continue
+        e_in, e_out = _tokens(resp.usage)
+        entrada += e_in
+        saida += e_out
+        msg = resp.choices[0].message
+        if msg.refusal or msg.parsed is None:
+            log.warning("Resposta inválida (tentativa %d): recusa ou sem parsed", tentativa)
+            continue
+        if not validar(msg.parsed):
+            log.warning("Resposta inválida (tentativa %d): reprovada na validação", tentativa)
+            continue
+        return msg.parsed, uso()
+    raise RespostaInvalida(f"resposta inválida após {TENTATIVAS} tentativas", uso())
 
 
 class OpenAIExtrator:
@@ -112,29 +160,8 @@ class OpenAIExtrator:
         self, legenda: str, imagens: list[bytes], username: str, publicado_em: datetime
     ) -> Resultado:
         mensagens = self._mensagens(legenda, imagens, username, publicado_em)
-        entrada = saida = 0
-        for tentativa in range(1, TENTATIVAS + 1):
-            try:
-                resp = self.client.chat.completions.parse(
-                    model=self.modelo, messages=mensagens, response_format=ExtracaoPost
-                )
-            except (ValidationError, LengthFinishReasonError, ContentFilterFinishReasonError) as e:
-                completion = getattr(e, "completion", None)
-                e_in, e_out = _tokens(getattr(completion, "usage", None))
-                entrada += e_in
-                saida += e_out
-                log.warning("Resposta inválida (tentativa %d): %s", tentativa, type(e).__name__)
-                continue
-            e_in, e_out = _tokens(resp.usage)
-            entrada += e_in
-            saida += e_out
-            msg = resp.choices[0].message
-            if msg.refusal or msg.parsed is None:
-                log.warning("Resposta inválida (tentativa %d): recusa ou sem parsed", tentativa)
-                continue
-            uso = Uso(entrada, saida, calcular_custo(self.modelo, entrada, saida), self.modelo)
-            return Resultado(msg.parsed, uso)
-        raise RespostaInvalida(f"resposta inválida após {TENTATIVAS} tentativas")
+        extracao, uso = parse_com_retentativa(self.client, self.modelo, mensagens, ExtracaoPost)
+        return Resultado(extracao, uso)
 
 
 class FakeExtrator:

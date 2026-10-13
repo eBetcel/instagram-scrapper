@@ -83,10 +83,23 @@ def test_post_sem_evento_retorna_lista_vazia():
 
 
 def test_resposta_invalida_tenta_de_novo_e_depois_levanta():
-    cliente = ClienteFalso(_resp(refusal="não posso", entrada=10, saida=1), _resp(parsed=None))
-    with pytest.raises(RespostaInvalida):
+    cliente = ClienteFalso(
+        _resp(refusal="não posso", entrada=10, saida=1), _resp(parsed=None, entrada=20, saida=2)
+    )
+    with pytest.raises(RespostaInvalida) as exc:
         OpenAIExtrator(cliente, "gpt-4.1-mini").extrair("x", [], "casa", PUBLICADO)
     assert len(cliente.chamadas) == 2
+    assert exc.value.uso == Uso(30, 3, calcular_custo("gpt-4.1-mini", 30, 3), "gpt-4.1-mini")
+
+
+def test_falha_por_erro_de_parse_soma_uso_da_completion():
+    erro = LengthFinishReasonError(
+        completion=SimpleNamespace(usage=SimpleNamespace(prompt_tokens=7, completion_tokens=5))
+    )
+    cliente = ClienteFalso(erro, _resp(parsed=None, entrada=1, saida=1))
+    with pytest.raises(RespostaInvalida) as exc:
+        OpenAIExtrator(cliente, "gpt-4.1-mini").extrair("x", [], "casa", PUBLICADO)
+    assert (exc.value.uso.tokens_entrada, exc.value.uso.tokens_saida) == (8, 6)
 
 
 def test_segunda_tentativa_valida_soma_uso():

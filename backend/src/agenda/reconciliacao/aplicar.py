@@ -158,12 +158,15 @@ def aplicar(
     alvo = _validar(d, candidatos)
     motivo = motivo or d.motivo
     novo = campos_do_evento(e)
+    # Em DUPLICADO/ATUALIZACAO, sem status_indicado o post nao informa status:
+    # None (ignorado), nunca "ativo" (o default vale so para criar um evento).
+    atualizacao = {**novo, "status": e.status_indicado}
 
     with s.begin_nested():
         if d.decisao == "NOVO":
             existente = _ja_criado_pelo_post(s, candidatos, post, novo["inicio"])
             if existente is not None:
-                _duplicado(s, existente, novo, post, motivo)
+                _duplicado(s, existente, atualizacao, post, motivo)
                 return existente
             ev = Evento(**novo)
             s.add(ev)
@@ -173,7 +176,7 @@ def aplicar(
 
         assert alvo is not None
         if d.decisao == "DUPLICADO":
-            _duplicado(s, alvo, novo, post, motivo)
+            _duplicado(s, alvo, atualizacao, post, motivo)
             return alvo
 
         campos = set(d.mudancas)
@@ -181,7 +184,7 @@ def aplicar(
             campos.add("status")
         for campo in _ORDEM:
             if campo in campos:
-                _alterar(s, alvo, campo, novo, post, motivo)
+                _alterar(s, alvo, campo, atualizacao, post, motivo)
         s.flush()
         _vincular(s, alvo, post, "atualizacao")
         return alvo

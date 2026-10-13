@@ -239,6 +239,20 @@ def test_atualizacao_campo_igual_nao_gera_revisao(session):
     assert _revisoes(session, ev) == []
 
 
+def test_atualizacao_status_sem_status_indicado_nao_reativa(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO, status="cancelado")
+    aplicar(session, E, _d("ATUALIZACAO", ev.id, ["status"]), [ev], post(session))
+    assert ev.status == "cancelado"
+    assert _revisoes(session, ev) == []
+
+
+def test_duplicado_nao_mexe_em_status_sem_status_indicado(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO, status="adiado")
+    aplicar(session, E, _d("DUPLICADO", ev.id), [ev], post(session))
+    assert ev.status == "adiado"
+    assert "status" not in [r.campo for r in _revisoes(session, ev)]
+
+
 # --- validação e transação ----------------------------------------------------
 
 

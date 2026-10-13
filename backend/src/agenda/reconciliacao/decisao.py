@@ -2,10 +2,9 @@ import json
 import logging
 from typing import Any, Literal, Protocol, get_args
 
-from openai import ContentFilterFinishReasonError, LengthFinishReasonError
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict
 
-from agenda.extracao.extrator import TENTATIVAS, RespostaInvalida, Uso, _tokens, calcular_custo
+from agenda.extracao.extrator import Uso, parse_com_retentativa
 from agenda.extracao.schema import EventoExtraido
 from agenda.models import Evento, Post
 
@@ -132,35 +131,14 @@ class OpenAIReconciliador:
         if not candidatos:
             return Decisao(decisao="NOVO", evento_id=None, mudancas=[], motivo="sem candidatos"), None
         mensagens = self._mensagens(e, candidatos, post)
-        entrada = saida = 0
-        for tentativa in range(1, TENTATIVAS + 1):
-            try:
-                resp = self.client.chat.completions.parse(
-                    model=self.modelo, messages=mensagens, response_format=Decisao
-                )
-            except (ValidationError, LengthFinishReasonError, ContentFilterFinishReasonError) as exc:
-                completion = getattr(exc, "completion", None)
-                e_in, e_out = _tokens(getattr(completion, "usage", None))
-                entrada += e_in
-                saida += e_out
-                log.warning("Resposta inválida (tentativa %d): %s", tentativa, type(exc).__name__)
-                continue
-            e_in, e_out = _tokens(resp.usage)
-            entrada += e_in
-            saida += e_out
-            msg = resp.choices[0].message
-            if msg.refusal or msg.parsed is None:
-                log.warning("Resposta inválida (tentativa %d): recusa ou sem parsed", tentativa)
-                continue
-            if not evento_id_valido(msg.parsed, candidatos):
-                log.warning(
-                    "Resposta inválida (tentativa %d): evento_id %r fora dos candidatos",
-                    tentativa, msg.parsed.evento_id,
-                )
-                continue
-            uso = Uso(entrada, saida, calcular_custo(self.modelo, entrada, saida), self.modelo)
-            return msg.parsed, uso
-        raise RespostaInvalida(f"resposta inválida após {TENTATIVAS} tentativas")
+
+        def validar(d: Decisao) -> bool:
+            if evento_id_valido(d, candidatos):
+                return True
+            log.warning("evento_id %r fora dos candidatos", d.evento_id)
+            return False
+
+        return parse_com_retentativa(self.client, self.modelo, mensagens, Decisao, validar)
 
 
 class FakeReconciliador:
