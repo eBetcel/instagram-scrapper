@@ -18,7 +18,7 @@ from sqlalchemy import (
     text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 CATEGORIAS = ("show", "festa", "exposicao", "teatro", "cinema", "oficina", "festival", "outro")
 
@@ -85,6 +85,8 @@ class Post(Base):
     custo_estimado: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
     erro_msg: Mapped[str | None] = mapped_column(Text)
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    perfil: Mapped[Perfil] = relationship()
 
 
 class Evento(Base):

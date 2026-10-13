@@ -1,39 +1,10 @@
 from datetime import date, datetime, time, timedelta, timezone
 
-from agenda.models import Evento
+from fabricas import AGORA
+from fabricas import evento as _evento
+from fabricas import extraido as _extraido
+
 from agenda.reconciliacao.candidatos import buscar_candidatos, normalizar_artistas
-
-AGORA = datetime(2026, 10, 13, 12, 0, tzinfo=timezone.utc)
-
-
-def _extraido(**kw):
-    from agenda.extracao.schema import Confianca, EventoExtraido
-
-    base = dict(
-        titulo=None, descricao=None, data_inicio=None, hora_inicio=None, data_fim=None,
-        hora_fim=None, local_nome=None, endereco=None, cidade=None, categoria="show",
-        preco_texto=None, gratuito=None, preco_min=None, preco_max=None, link_ingresso=None,
-        artistas=[], status_indicado=None,
-        confianca=Confianca(data_inicio=1.0, hora_inicio=1.0, local_nome=1.0),
-    )
-    base.update(kw)
-    return EventoExtraido(**base)
-
-
-def _evento(s, titulo="Evento Qualquer", inicio=None, **kw):
-    artistas = kw.pop("artistas", [])
-    ev = Evento(
-        titulo=titulo,
-        inicio=inicio or AGORA + timedelta(days=10),
-        categoria=kw.pop("categoria", "show"),
-        status=kw.pop("status", "ativo"),
-        artistas=artistas,
-        artistas_norm=normalizar_artistas(artistas),
-        **kw,
-    )
-    s.add(ev)
-    s.flush()
-    return ev
 
 
 def test_normalizar_artistas():
