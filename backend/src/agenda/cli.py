@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from agenda.config import Settings, get_settings
 from agenda.db import get_session_factory, session_scope
 from agenda.extracao.regras import FUSO
-from agenda.jobs import enfileirar
+from agenda.jobs import reativar_ou_enfileirar
 from agenda.models import ContaColeta, Evento, EventoFonte, Job, Perfil, Post
 from agenda.pipeline import Dependencias
 
@@ -147,19 +147,24 @@ def coletar(
         if not perfis:
             raise _falhar("Nenhum perfil encontrado.")
         agora = datetime.now(UTC)
+        efetivos = 0
         for p in perfis:
             p.proxima_coleta_em = agora
             chave = f"coletar:{p.id}"
-            job = enfileirar(s, "coletar_perfil", {"perfil_id": p.id}, chave=chave, executar_em=agora)
-            if job is None:  # já havia job não concluído: adianta se ainda estiver pendente
-                existente = s.scalars(
+            r = reativar_ou_enfileirar(s, "coletar_perfil", {"perfil_id": p.id}, chave, executar_em=agora)
+            if r == "existente":  # job vivo: adianta se estiver pendente e ainda não vencido
+                pendente = s.scalars(
                     select(Job).where(
-                        Job.tipo == "coletar_perfil", Job.chave == chave, Job.status == "pendente"
+                        Job.tipo == "coletar_perfil", Job.chave == chave, Job.status == "pendente",
+                        Job.executar_em > agora,
                     )
                 ).one_or_none()
-                if existente is not None:
-                    existente.executar_em = agora
-    typer.echo(f"Coleta enfileirada para {len(perfis)} perfil(is).")
+                if pendente is not None:
+                    pendente.executar_em = agora
+                    efetivos += 1
+            else:
+                efetivos += 1
+    typer.echo(f"Coleta enfileirada ou adiantada para {efetivos} de {len(perfis)} perfil(is).")
 
 
 @app.command("worker")
@@ -219,11 +224,12 @@ def post_reprocessar(
             tipo, chave = "reconciliar_post", f"reconciliar:{post.id}"
         post.erro_msg = None
         s.flush()
-        job = enfileirar(s, tipo, {"post_id": post.id}, chave=chave)
-    typer.echo(
-        f"Post {shortcode}: {tipo} enfileirado." if job is not None
-        else f"Post {shortcode}: já havia {tipo} pendente."
-    )
+        r = reativar_ou_enfileirar(s, tipo, {"post_id": post.id}, chave)
+    typer.echo({
+        "novo": f"Post {shortcode}: {tipo} enfileirado.",
+        "reativado": f"Post {shortcode}: {tipo} com erro reativado.",
+        "existente": f"Post {shortcode}: já havia {tipo} pendente ou em execução.",
+    }[r])
 
 
 def _data(valor: str | None, opcao: str) -> date | None:

@@ -172,3 +172,27 @@ def test_falhar_definitivo_vira_erro_sem_retentativa(session):
     assert job.tentativas == 1
     assert job.erro_msg == "inválida"
     assert reservar(session, ["t_def"]) is None
+
+
+def test_reativar_ou_enfileirar_cobre_novo_reativado_existente(session):
+    from agenda.jobs import reativar_ou_enfileirar
+
+    assert reativar_ou_enfileirar(session, "t", {"a": 1}, "k1") == "novo"
+    assert reativar_ou_enfileirar(session, "t", {"a": 1}, "k1") == "existente"
+
+    job = session.scalars(select(Job).where(Job.chave == "k1")).one()
+    job.status, job.tentativas, job.erro_msg = "erro", 5, "boom"
+    session.flush()
+    assert reativar_ou_enfileirar(session, "t", {"a": 1}, "k1") == "reativado"
+    session.refresh(job)
+    assert (job.status, job.tentativas, job.erro_msg) == ("pendente", 0, None)
+    assert job.executar_em <= _agora(session)
+
+    job.status = "executando"
+    session.flush()
+    assert reativar_ou_enfileirar(session, "t", {"a": 1}, "k1") == "existente"
+    assert job.status == "executando"
+
+    job.status = "concluido"
+    session.flush()
+    assert reativar_ou_enfileirar(session, "t", {"a": 1}, "k1") == "novo"

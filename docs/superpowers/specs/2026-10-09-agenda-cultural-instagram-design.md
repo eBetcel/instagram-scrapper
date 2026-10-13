@@ -42,7 +42,7 @@ Um produto que lê perfis do Instagram por quem usa e entrega a agenda cultural 
 | **api** (FastAPI) | Autenticação, CRUD de grupos e perfis, consulta de eventos. |
 | **worker** (Python, mesmo pacote da api) | Jobs agendados: coleta, extração, reconciliação, newsletter. Também roda o bot do Telegram. |
 | **Postgres** | Fonte da verdade, e também fila de jobs via `SELECT ... FOR UPDATE SKIP LOCKED`, para não precisar de Redis. |
-| **Armazenamento de objetos** (S3-compatível; MinIO no ambiente local) | Cópia dos flyers. As URLs do CDN do Instagram expiram. |
+| **Armazenamento de objetos** (S3-compatível; SeaweedFS no ambiente local) | Cópia dos flyers. As URLs do CDN do Instagram expiram. |
 
 A api e o worker compartilham o mesmo código (modelos, acesso ao banco, serviços) e rodam como processos separados.
 

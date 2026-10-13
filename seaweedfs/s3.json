@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "agenda",
+      "credentials": [{ "accessKey": "agenda", "secretKey": "agenda-secret" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

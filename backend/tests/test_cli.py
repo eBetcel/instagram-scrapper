@@ -175,6 +175,55 @@ def test_post_reprocessar_reconciliacao_exige_extracao(fabrica):
         assert s.scalars(select(Job)).all() == []
 
 
+def test_post_reprocessar_revive_job_em_erro(fabrica):
+    pid = criar_post(fabrica, extracao=None)
+    with fabrica.begin() as s:
+        enfileirar(s, "extrair_post", {"post_id": pid}, chave=f"extrair:{pid}")
+        job = s.scalars(select(Job)).one()
+        job.status, job.tentativas, job.erro_msg = "erro", 5, "boom"
+        job.executar_em = datetime.now(UTC) + timedelta(hours=1)
+    r = invocar("post-reprocessar", "ABC")
+    assert r.exit_code == 0, r.output
+    assert "reativado" in r.output
+    with fabrica() as s:
+        job = s.scalars(select(Job)).one()
+        assert (job.status, job.tentativas, job.erro_msg) == ("pendente", 0, None)
+        assert job.executar_em <= datetime.now(UTC)
+        assert s.get(Post, pid).status == "pendente"
+
+
+def test_post_reprocessar_job_pendente_diz_que_ja_havia(fabrica):
+    criar_post(fabrica)
+    assert invocar("post-reprocessar", "ABC").exit_code == 0
+    r = invocar("post-reprocessar", "ABC")
+    assert "já havia" in r.output
+
+
+def test_coletar_revive_job_em_erro_e_conta_so_efetivos(fabrica):
+    invocar("perfil-adicionar", "casa")
+    invocar("perfil-adicionar", "bar")
+    with fabrica.begin() as s:
+        casa = s.scalars(select(Perfil).where(Perfil.username == "casa")).one()
+        bar = s.scalars(select(Perfil).where(Perfil.username == "bar")).one()
+        enfileirar(s, "coletar_perfil", {"perfil_id": casa.id}, chave=f"coletar:{casa.id}")
+        enfileirar(s, "coletar_perfil", {"perfil_id": bar.id}, chave=f"coletar:{bar.id}")
+        for j in s.scalars(select(Job)).all():
+            if j.payload["perfil_id"] == casa.id:
+                j.status, j.tentativas, j.erro_msg = "erro", 5, "boom"
+                j.executar_em = datetime.now(UTC) + timedelta(hours=1)
+            else:  # já vencido: nada a fazer
+                j.executar_em = datetime.now(UTC) - timedelta(minutes=1)
+    r = invocar("coletar")
+    assert r.exit_code == 0, r.output
+    assert "1 de 2" in r.output
+    with fabrica() as s:
+        jobs = {j.payload["perfil_id"]: j for j in s.scalars(select(Job)).all()}
+        assert len(jobs) == 2
+        j = jobs[casa.id]
+        assert (j.status, j.tentativas, j.erro_msg) == ("pendente", 0, None)
+        assert j.executar_em <= datetime.now(UTC)
+
+
 def test_post_reprocessar_inexistente_e_etapa_invalida(fabrica):
     assert invocar("post-reprocessar", "NAO").exit_code != 0
     criar_post(fabrica)

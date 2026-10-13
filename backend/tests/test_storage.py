@@ -17,6 +17,56 @@ def test_memoria_storage_chave_ausente():
 def test_s3_storage_configura_regiao_e_assinatura_v4():
     from agenda.storage import S3Storage
 
-    c = S3Storage("http://localhost:9000", "b", "k", "s")._client
+    c = S3Storage("http://localhost:8333", "b", "k", "s")._client
     assert c.meta.region_name == "us-east-1"
     assert c.meta.config.signature_version == "s3v4"
+
+
+class _ClienteFalso:
+    def __init__(self, head_codigo=None):
+        self.head_codigo = head_codigo
+        self.chamadas = []
+
+    def head_bucket(self, Bucket):
+        self.chamadas.append("head")
+        if self.head_codigo:
+            from botocore.exceptions import ClientError
+
+            raise ClientError({"Error": {"Code": self.head_codigo}}, "HeadBucket")
+
+    def create_bucket(self, Bucket):
+        self.chamadas.append("create")
+
+    def put_object(self, **kw):
+        self.chamadas.append("put")
+
+
+def _storage(cliente):
+    from agenda.storage import S3Storage
+
+    st = S3Storage("http://localhost:8333", "b", "k", "s")
+    st._client = cliente
+    return st
+
+
+def test_s3_storage_cria_bucket_ausente_uma_vez():
+    c = _ClienteFalso(head_codigo="404")
+    st = _storage(c)
+    st.salvar("a", b"x", "image/jpeg")
+    st.salvar("b", b"x", "image/jpeg")
+    assert c.chamadas == ["head", "create", "put", "put"]
+
+
+def test_s3_storage_nao_cria_bucket_existente():
+    c = _ClienteFalso()
+    _storage(c).salvar("a", b"x", "image/jpeg")
+    assert c.chamadas == ["head", "put"]
+
+
+def test_s3_storage_propaga_erro_de_acesso_no_head():
+    from botocore.exceptions import ClientError
+
+    c = _ClienteFalso(head_codigo="403")
+    with pytest.raises(ClientError):
+        _storage(c).salvar("a", b"x", "image/jpeg")
+    assert "create" not in c.chamadas

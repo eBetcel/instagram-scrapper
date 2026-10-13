@@ -18,10 +18,10 @@ class Settings(BaseSettings):
     # Sem default no código: definidos por variável de ambiente (ver .env.example).
     openai_modelo_extracao: str
     openai_modelo_reconciliacao: str
-    s3_endpoint: str = "http://localhost:9000"
+    s3_endpoint: str = "http://localhost:8333"
     s3_bucket: str = "flyers"
-    s3_access_key: str = "minioadmin"
-    s3_secret_key: str = "minioadmin"
+    s3_access_key: str = "agenda"
+    s3_secret_key: str = "agenda-secret"
     chave_sessao: str = ""  # chave Fernet das sessões do scraper
     intervalo_coleta_horas: int = 6
     limite_requisicoes_conta_hora: int = 20

@@ -7,6 +7,7 @@ o início da execução, e `recuperar_travados` devolve à fila os que passaram 
 """
 
 from datetime import datetime, timedelta
+from typing import Literal
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -39,6 +40,31 @@ def enfileirar(
     return s.scalars(
         stmt.returning(Job), execution_options={"populate_existing": True}
     ).one_or_none()
+
+
+def reativar_ou_enfileirar(
+    s: Session, tipo: str, payload: dict, chave: str, *, executar_em: datetime | None = None
+) -> Literal["novo", "reativado", "existente"]:
+    """Garante um job vivo para (tipo, chave).
+
+    Sem job não concluído: enfileira ("novo"). Com job em 'erro' (morto, mas que ainda
+    bloqueia `enfileirar` pela chave): zera tentativas e erro e o devolve à fila
+    ("reativado"). Com job 'pendente' ou 'executando': não mexe ("existente").
+    """
+    existente = s.scalars(
+        select(Job).where(Job.tipo == tipo, Job.chave == chave, Job.status != "concluido")
+    ).one_or_none()
+    if existente is None:
+        job = enfileirar(s, tipo, payload, chave=chave, executar_em=executar_em)
+        return "novo" if job is not None else "existente"
+    if existente.status == "erro":
+        existente.status = "pendente"
+        existente.tentativas = 0
+        existente.erro_msg = None
+        existente.executar_em = executar_em or func.now()
+        s.flush()
+        return "reativado"
+    return "existente"
 
 
 def reservar(s: Session, tipos: list[str]) -> Job | None:
