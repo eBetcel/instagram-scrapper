@@ -6,6 +6,7 @@ from typing import Any
 import instaloader
 
 from agenda.coleta.base import (
+    MAX_FIXADOS,
     ContaBloqueada,
     PerfilInexistente,
     PerfilPrivado,
@@ -80,9 +81,10 @@ class InstaloaderColetor:
         conta = self.pool.obter()
         try:
             perfil = self._fabrica(conta, username)
-            for post in perfil.get_posts():
+            for i, post in enumerate(perfil.get_posts()):
                 p = parse_post(post._node)
-                if desde is not None and not p.fixado and p.publicado_em < desde:
+                possivel_fixado = p.fixado or i < MAX_FIXADOS
+                if desde is not None and not possivel_fixado and p.publicado_em < desde:
                     return
                 yield p
         except instaloader.ProfileNotExistsException as e:

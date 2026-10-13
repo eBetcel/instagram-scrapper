@@ -4,6 +4,11 @@ from datetime import datetime
 from typing import Protocol
 
 
+# Instagram mostra até 3 posts fixados no topo do perfil; como o marcador de
+# fixado pode não vir no node, os 3 primeiros posts são tratados como possivelmente fixados.
+MAX_FIXADOS = 3
+
+
 class PerfilPrivado(Exception):
     pass
 

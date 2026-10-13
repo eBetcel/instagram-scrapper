@@ -150,13 +150,32 @@ def test_connection_exception_comum_propaga():
     assert pool.bloqueios == []
 
 
-def test_para_em_post_nao_fixado_mais_antigo_que_desde_e_ignora_fixado():
+def _node(sc, ts, **kw):
+    return {**_carregar("sem_legenda.json"), "shortcode": sc, "taken_at_timestamp": ts, **kw}
+
+
+def test_primeiros_posts_sao_isentos_da_regra_de_parada():
     pool = _Pool()
-    fixado_antigo = {**_carregar("video.json"), "taken_at_timestamp": 1000}
-    novo = _carregar("sem_legenda.json")  # 1760007200
-    velho = {**_carregar("carrossel.json"), "taken_at_timestamp": 1500}
-    depois = {**_carregar("carrossel.json"), "shortcode": "NUNCA"}
-    perfil = _Perfil([fixado_antigo, novo, velho, depois])
     desde = datetime.fromtimestamp(1760000000, UTC)
+    # primeiro velho sem marcador de fixado, seguido de novos
+    perfil = _Perfil([_node("VELHO", 1000), _node("N1", 1760000100), _node("N2", 1760000200)])
     got = list(_coletor(pool, lambda u: perfil).posts_desde("a", desde))
-    assert [p.shortcode for p in got] == ["VID0001", "IMG0001"]
+    assert [p.shortcode for p in got] == ["VELHO", "N1", "N2"]
+
+
+def test_regra_de_parada_vale_a_partir_do_quarto_post():
+    pool = _Pool()
+    desde = datetime.fromtimestamp(1760000000, UTC)
+    itens = [_node(f"A{i}", 1000 + i) for i in range(3)]  # 3 velhos no topo (isentos)
+    itens += [_node("N1", 1760000100), _node("VELHO4", 1000), _node("NUNCA", 1760000300)]
+    got = list(_coletor(pool, lambda u: _Perfil(itens)).posts_desde("a", desde))
+    assert [p.shortcode for p in got] == ["A0", "A1", "A2", "N1"]
+
+
+def test_fixado_apos_o_terceiro_tambem_e_isento():
+    pool = _Pool()
+    desde = datetime.fromtimestamp(1760000000, UTC)
+    itens = [_node(f"N{i}", 1760000100 + i) for i in range(3)]
+    itens += [_node("FIX", 1000, pinned_for_users=[{"id": "1"}]), _node("VELHO", 1000)]
+    got = list(_coletor(pool, lambda u: _Perfil(itens)).posts_desde("a", desde))
+    assert [p.shortcode for p in got] == ["N0", "N1", "N2", "FIX"]
