@@ -1,6 +1,7 @@
 from typing import Protocol
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import ClientError
 
 from agenda.config import Settings
@@ -33,6 +34,8 @@ class S3Storage:
             endpoint_url=endpoint,
             aws_access_key_id=access_key,
             aws_secret_access_key=secret_key,
+            region_name="us-east-1",  # MinIO ignora a região, mas o boto3 exige uma
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
         )
 
     @classmethod

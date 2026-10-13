@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     s3_secret_key: str = "minioadmin"
     chave_sessao: str = ""  # chave Fernet das sessões do scraper
     intervalo_coleta_horas: int = 6
+    limite_requisicoes_conta_hora: int = 20
 
 
 @lru_cache
