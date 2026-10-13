@@ -102,6 +102,14 @@ def falhar(s: Session, job: Job, erro: str) -> None:
     s.flush()
 
 
+def adiar(s: Session, job: Job, ate: datetime, motivo: str) -> None:
+    """Devolve o job à fila para `ate` sem gastar tentativa (falta de recurso, não erro)."""
+    job.status = "pendente"
+    job.executar_em = ate
+    job.erro_msg = motivo
+    s.flush()
+
+
 def falhar_definitivo(s: Session, job: Job, erro: str) -> None:
     """Falha terminal: vira 'erro' sem retentativa."""
     job.tentativas += 1

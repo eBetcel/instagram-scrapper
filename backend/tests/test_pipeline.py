@@ -14,7 +14,7 @@ from reconciliacao.fabricas import extraido
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import sessionmaker
 
-from agenda.coleta.base import FakeColetor, PostColetado
+from agenda.coleta.base import FakeColetor, PostColetado, SemContasDisponiveis
 from agenda.extracao.extrator import FakeExtrator, RespostaInvalida, Resultado, Uso
 from agenda.extracao.regras import FUSO
 from agenda.extracao.schema import ExtracaoPost
@@ -387,10 +387,11 @@ def test_falha_no_segundo_evento_desfaz_o_primeiro(fabrica):
 def test_worker_de_coleta_agenda_perfis_devidos(fabrica):
     with fabrica.begin() as s:
         s.add(Perfil(username="casa"))
-    rodar(fabrica, deps(), ["coletar_perfil"])
+    # perfil nunca coletado: agendado sem jitter, então já roda na mesma passada
+    assert rodar(fabrica, deps(), ["coletar_perfil"]) == 1
     with fabrica() as s:
         job = s.scalars(select(Job)).one()
-    assert (job.tipo, job.chave, job.status) == ("coletar_perfil", "coletar:1", "pendente")
+    assert (job.tipo, job.chave, job.status) == ("coletar_perfil", "coletar:1", "concluido")
 
 
 def test_worker_de_reconciliacao_nao_agenda_coletas(fabrica):
@@ -446,3 +447,51 @@ def test_tratar_reconciliar_post_ignora_post_ja_reconciliado(session):
     tratar_reconciliar_post(session, job, deps())  # FakeReconciliador vazio: não é chamado
 
     assert session.scalar(select(func.count()).select_from(Evento)) == 0
+
+
+# --- revisão final: sem contas, coleta morta, tipo desconhecido ----------------
+
+
+@pytest.mark.parametrize("disponivel_em", [AGORA + timedelta(hours=2), None])
+def test_sem_contas_adia_coleta_sem_gastar_tentativa(fabrica, disponivel_em):
+    criar_perfis(fabrica, "casa")
+    erro = SemContasDisponiveis(disponivel_em=disponivel_em)
+    d = deps(coletor=FakeColetor({}, erros={"casa": erro}))
+
+    assert rodar(fabrica, d, ["coletar_perfil"]) == 1
+
+    with fabrica() as s:
+        job = s.scalars(select(Job).where(Job.tipo == "coletar_perfil")).one()
+        agora_db = s.scalar(select(func.now()))
+    assert (job.status, job.tentativas) == ("pendente", 0)
+    assert "SemContasDisponiveis" in job.erro_msg
+    if disponivel_em is not None:
+        assert job.executar_em == disponivel_em
+    else:
+        assert abs((job.executar_em - (agora_db + timedelta(hours=1))).total_seconds()) < 60
+
+
+def test_coleta_esgotada_empurra_proxima_coleta_do_perfil(fabrica):
+    criar_perfis(fabrica, "casa")
+    d = deps(coletor=FakeColetor({}, erros={"casa": ConnectionError("rede")}))
+    rodar(fabrica, d, ["coletar_perfil"])
+    for _ in range(4):
+        reagendar_jobs(fabrica)
+        rodar(fabrica, d, ["coletar_perfil"])
+    with fabrica() as s:
+        job = s.scalars(select(Job).where(Job.tipo == "coletar_perfil")).one()
+        perfil = s.scalars(select(Perfil)).one()
+    assert job.status == "erro"
+    # o agendador só reativa o job no próximo intervalo, sem martelar o perfil
+    assert perfil.proxima_coleta_em is not None
+    assert perfil.proxima_coleta_em > AGORA + timedelta(hours=5)
+
+
+def test_tipo_de_job_desconhecido_falha_sem_retentativa(fabrica):
+    with fabrica.begin() as s:
+        enfileirar(s, "tipo_inexistente", {})
+    assert rodar(fabrica, deps(), ["tipo_inexistente"]) == 1
+    with fabrica() as s:
+        job = s.scalars(select(Job)).one()
+    assert (job.status, job.tentativas) == ("erro", 1)
+    assert "tipo_inexistente" in job.erro_msg

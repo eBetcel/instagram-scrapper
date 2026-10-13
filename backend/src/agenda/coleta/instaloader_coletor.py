@@ -21,25 +21,35 @@ BLOQUEIO = timedelta(hours=6)
 _SINAIS_BLOQUEIO = ("401", "429", "checkpoint", "please wait")
 
 
-def parse_post(node: dict) -> PostColetado:
-    """Lê o dict `Post._node` do instaloader (ver tests/fixtures/ig/README.md).
+def _fixado(post: instaloader.Post) -> bool:
+    """`Post.is_pinned` (formato GraphQL) ou `timeline_pinned_user_ids` (formato iPhone)."""
+    if post.is_pinned:
+        return True
+    iphone = post._node.get("iphone_struct") or {}
+    return bool(iphone.get("timeline_pinned_user_ids"))
 
-    Fixado = `pinned_for_users` não vazio (mesmo critério de `Post.is_pinned`).
+
+def parse_post(post: instaloader.Post) -> PostColetado:
+    """Monta `PostColetado` pela API pública de `instaloader.Post`.
+
+    Funciona tanto para o node GraphQL anônimo quanto para o node criado por
+    `Post.from_iphone_struct` (usado por `Profile.get_posts()` com sessão logada).
+    Vídeos (e filhos em vídeo de carrossel) contribuem com a capa.
     """
-    if node.get("__typename") == "GraphSidecar":
-        urls = [e["node"]["display_url"] for e in node["edge_sidecar_to_children"]["edges"]]
-    elif node.get("display_url"):
-        urls = [node["display_url"]]  # imagem, ou capa de vídeo
-    else:
+    try:
+        if post.typename == "GraphSidecar":
+            urls = [n.display_url for n in post.get_sidecar_nodes()]
+        else:
+            urls = [post.url]  # imagem, ou capa de vídeo
+    except KeyError:
         urls = []
-    edges = (node.get("edge_media_to_caption") or {}).get("edges") or []
-    legenda = edges[0]["node"]["text"] if edges else ""
     return PostColetado(
-        shortcode=node["shortcode"],
-        legenda=legenda or "",
-        publicado_em=datetime.fromtimestamp(node["taken_at_timestamp"], UTC),
+        shortcode=post.shortcode,
+        legenda=post.caption or "",
+        # `date_utc` usa datetime.utcfromtimestamp (depreciado, ingênuo); `date_local` é tz-aware.
+        publicado_em=post.date_local.astimezone(UTC),
         urls_imagens=urls,
-        fixado=bool(node.get("pinned_for_users")),
+        fixado=_fixado(post),
     )
 
 
@@ -81,8 +91,11 @@ class InstaloaderColetor:
         conta = self.pool.obter()
         try:
             perfil = self._fabrica(conta, username)
+            # PrivateProfileNotFollowedException só é levantada por download_profile(s).
+            if getattr(perfil, "is_private", False) and not getattr(perfil, "followed_by_viewer", False):
+                raise PerfilPrivado(username)
             for i, post in enumerate(perfil.get_posts()):
-                p = parse_post(post._node)
+                p = parse_post(post)
                 possivel_fixado = p.fixado or i < MAX_FIXADOS
                 if desde is not None and not possivel_fixado and p.publicado_em < desde:
                     return

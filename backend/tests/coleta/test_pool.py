@@ -106,3 +106,26 @@ def test_marcar_bloqueada_persiste_e_exclui_da_selecao(fabrica):
     with pytest.raises(SemContasDisponiveis):
         pool.obter(AGORA + timedelta(hours=1))
     assert pool.obter(AGORA + timedelta(hours=7)).usuario_ig == "a"
+
+
+def test_sem_contas_informa_quando_a_primeira_volta(fabrica):
+    _conta(fabrica, "b6", status="bloqueada", bloqueada_ate=AGORA + timedelta(hours=6))
+    _conta(fabrica, "b2", status="bloqueada", bloqueada_ate=AGORA + timedelta(hours=2))
+    _conta(fabrica, "off", status="desativada", bloqueada_ate=AGORA + timedelta(minutes=5))
+    with pytest.raises(SemContasDisponiveis) as exc:
+        PoolContas(fabrica, 10).obter(AGORA)
+    assert exc.value.disponivel_em == AGORA + timedelta(hours=2)
+
+
+def test_sem_contas_por_limite_informa_fim_da_janela(fabrica):
+    _conta(fabrica, "cheia", usos_janela=10, janela_inicio=AGORA - timedelta(minutes=50))
+    _conta(fabrica, "b", status="bloqueada", bloqueada_ate=AGORA + timedelta(hours=6))
+    with pytest.raises(SemContasDisponiveis) as exc:
+        PoolContas(fabrica, 10).obter(AGORA)
+    assert exc.value.disponivel_em == AGORA + timedelta(minutes=10)
+
+
+def test_sem_nenhuma_conta_nao_informa_quando(fabrica):
+    with pytest.raises(SemContasDisponiveis) as exc:
+        PoolContas(fabrica, 10).obter(AGORA)
+    assert exc.value.disponivel_em is None

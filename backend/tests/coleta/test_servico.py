@@ -2,7 +2,7 @@ import random
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from agenda.coleta.base import (
     ContaBloqueada,
@@ -145,10 +145,10 @@ def test_falha_de_download_nao_deixa_post_parcial(session, perfil):
 
 
 def test_shortcode_ja_existente_nao_duplica(session, perfil, monkeypatch):
-    # Outro job insere o shortcode depois da checagem de conhecidos: ON CONFLICT cobre.
+    # Outro job insere o shortcode depois da checagem de dono: ON CONFLICT cobre.
     import agenda.coleta.servico as sv
 
-    monkeypatch.setattr(sv, "_conhecidos", lambda s, codes: set())
+    monkeypatch.setattr(sv, "_dono", lambda s, shortcode: None)
     session.add(Post(perfil_id=perfil.id, shortcode="dup"))
     session.flush()
     n, st = rodar(session, perfil, [post("dup")])
@@ -189,3 +189,58 @@ def test_intervalo_padrao_vem_das_settings(session, perfil, monkeypatch):
     finally:
         get_settings.cache_clear()
     assert perfil.proxima_coleta_em == AGORA + timedelta(hours=3)
+
+
+# --- revisão final: colab, reativação, prioridade -----------------------------
+
+
+def test_post_ja_salvo_por_outro_perfil_e_pulado_sem_parar_a_coleta(session, perfil):
+    outro = Perfil(username="parceiro")
+    session.add(outro)
+    session.flush()
+    session.add(Post(perfil_id=outro.id, shortcode="colab"))
+    session.flush()
+    # "colab" está depois dos 3 primeiros: se contasse como conhecido, pararia a coleta.
+    posts = [post("n1"), post("n2"), post("n3"), post("colab"), post("n5")]
+    baixados = []
+
+    def baixar_espia(url):
+        baixados.append(url)
+        return baixar(url)
+
+    n = coletar_perfil(session, perfil.id, FakeColetor({"casa": posts}), MemoriaStorage(),
+                       agora=AGORA, baixar=baixar_espia, intervalo_horas=6)
+    assert n == 4
+    donos = dict(session.execute(select(Post.shortcode, Post.perfil_id)).all())
+    assert donos["colab"] == outro.id  # não foi salvo de novo nem trocou de dono
+    assert donos["n5"] == perfil.id
+    assert not any("/colab/" in u for u in baixados)
+
+
+def test_agendar_reativa_job_de_coleta_em_erro(session, perfil):
+    agendar_coletas(session, AGORA, rng=random.Random(1))
+    j = session.scalar(select(Job).where(Job.tipo == "coletar_perfil"))
+    j.status, j.tentativas, j.erro_msg = "erro", 5, "boom"
+    session.flush()
+
+    assert agendar_coletas(session, AGORA, rng=random.Random(1)) == 1
+    session.refresh(j)
+    assert (j.status, j.tentativas, j.erro_msg) == ("pendente", 0, None)
+    assert session.scalar(select(func.count()).select_from(Job)) == 1
+
+
+def test_agendar_perfil_novo_sem_jitter_e_devido_com_jitter(session):
+    novo = Perfil(username="novo")  # nunca coletado: prioridade
+    velho = Perfil(username="velho", ultima_coleta_em=AGORA - timedelta(hours=7),
+                   proxima_coleta_em=AGORA - timedelta(hours=1))
+    session.add_all([novo, velho])
+    session.flush()
+
+    class SempreMaximo(random.Random):
+        def uniform(self, a, b):
+            return b
+
+    assert agendar_coletas(session, AGORA, rng=SempreMaximo()) == 2
+    em = dict(session.execute(select(Job.chave, Job.executar_em)).all())
+    assert em[f"coletar:{novo.id}"] == AGORA
+    assert em[f"coletar:{velho.id}"] == AGORA + timedelta(minutes=30)

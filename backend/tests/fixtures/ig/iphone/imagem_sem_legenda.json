@@ -1,0 +1,6 @@
+{"pk": "3460000000000000003", "id": "3460000000000000003_9000", "code": "IIMG001", "taken_at": 1760030000,
+ "media_type": 1, "product_type": "feed", "has_liked": false, "like_count": 1, "comment_count": 0,
+ "caption": null,
+ "user": {"pk": "9000", "username": "casa.cultural", "full_name": "Casa Cultural", "is_private": false,
+          "profile_pic_url": "https://cdn.example/pp.jpg"},
+ "image_versions2": {"candidates": [{"width": 1080, "height": 1080, "url": "https://cdn.example/ii.jpg?stp=a&se=7"}]}}

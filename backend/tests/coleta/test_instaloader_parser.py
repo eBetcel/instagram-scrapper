@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -21,8 +22,17 @@ def _carregar(nome: str) -> dict:
     return json.loads((FIX / nome).read_text())
 
 
+def _ctx(logado: bool):
+    return SimpleNamespace(iphone_support=True, is_logged_in=logado, error=lambda *a, **k: None)
+
+
+def _post_anonimo(node: dict) -> instaloader.Post:
+    """Node GraphQL anônimo, como `Post(context, node)` sem sessão."""
+    return instaloader.Post(_ctx(False), node)
+
+
 def test_parse_carrossel_retorna_todas_as_imagens():
-    p = parse_post(_carregar("carrossel.json"))
+    p = parse_post(_post_anonimo(_carregar("carrossel.json")))
     assert p.shortcode == "CAR0001"
     assert p.legenda.startswith("Show da banda X")
     assert p.urls_imagens == [
@@ -36,13 +46,13 @@ def test_parse_carrossel_retorna_todas_as_imagens():
 
 
 def test_parse_video_usa_capa():
-    p = parse_post(_carregar("video.json"))
+    p = parse_post(_post_anonimo(_carregar("video.json")))
     assert p.urls_imagens == ["https://cdn.example/vid_capa.jpg"]
     assert p.fixado is True
 
 
 def test_parse_legenda_ausente_vira_string_vazia():
-    p = parse_post(_carregar("sem_legenda.json"))
+    p = parse_post(_post_anonimo(_carregar("sem_legenda.json")))
     assert p.legenda == ""
     assert p.urls_imagens == ["https://cdn.example/img.jpg"]
 
@@ -50,7 +60,7 @@ def test_parse_legenda_ausente_vira_string_vazia():
 def test_parse_sem_chave_de_legenda():
     node = _carregar("sem_legenda.json")
     del node["edge_media_to_caption"]
-    assert parse_post(node).legenda == ""
+    assert parse_post(_post_anonimo(node)).legenda == ""
 
 
 def test_fake_coletor_devolve_posts_e_erros():
@@ -84,7 +94,7 @@ class _Perfil:
         for i in self._itens:
             if isinstance(i, Exception):
                 raise i
-            yield type("P", (), {"_node": i})()
+            yield _post_anonimo(i)
 
 
 def _coletor(pool, fabrica):
@@ -179,3 +189,57 @@ def test_fixado_apos_o_terceiro_tambem_e_isento():
     itens += [_node("FIX", 1000, pinned_for_users=[{"id": "1"}]), _node("VELHO", 1000)]
     got = list(_coletor(pool, lambda u: _Perfil(itens)).posts_desde("a", desde))
     assert [p.shortcode for p in got] == ["N0", "N1", "N2", "FIX"]
+
+
+# --- formato iPhone (Profile.get_posts() logado usa Post.from_iphone_struct) ---
+
+
+def _post_iphone(nome: str) -> instaloader.Post:
+    return instaloader.Post.from_iphone_struct(_ctx(True), _carregar(f"iphone/{nome}"))
+
+
+class _PerfilDePosts:
+    def __init__(self, posts):
+        self._posts = posts
+
+    def get_posts(self):
+        yield from self._posts
+
+
+def test_coletor_le_posts_no_formato_iphone():
+    pool = _Pool()
+    posts = [_post_iphone("video.json"), _post_iphone("carrossel.json"), _post_iphone("imagem_sem_legenda.json")]
+    got = list(_coletor(pool, lambda u: _PerfilDePosts(posts)).posts_desde("a", None))
+    vid, car, img = got
+    assert car.shortcode == "ICAR001"
+    assert car.legenda == "Agenda de outubro: dia 10 show, dia 17 festa"
+    assert car.publicado_em == datetime.fromtimestamp(1760010000, UTC)
+    assert car.urls_imagens == [
+        "https://cdn.example/ic_1.jpg?stp=x&_nc_ht=y",
+        "https://cdn.example/ic_2.jpg",
+        "https://cdn.example/ic_3_capa.jpg",
+    ]
+    assert car.fixado is False
+    assert vid.urls_imagens == ["https://cdn.example/iv_capa.jpg"]
+    assert vid.legenda == "Teaser do festival"
+    assert vid.fixado is True
+    assert img.legenda == ""
+    assert img.urls_imagens == ["https://cdn.example/ii.jpg?stp=a"]
+    assert img.publicado_em.tzinfo is not None
+
+
+def test_perfil_privado_nao_seguido_levanta_perfil_privado():
+    pool = _Pool()
+    perfil = _PerfilDePosts([_post_iphone("carrossel.json")])
+    perfil.is_private, perfil.followed_by_viewer = True, False
+    with pytest.raises(PerfilPrivado):
+        list(_coletor(pool, lambda u: perfil).posts_desde("a", None))
+    assert pool.bloqueios == []
+
+
+def test_perfil_privado_seguido_e_coletado():
+    pool = _Pool()
+    perfil = _PerfilDePosts([_post_iphone("carrossel.json")])
+    perfil.is_private, perfil.followed_by_viewer = True, True
+    got = list(_coletor(pool, lambda u: perfil).posts_desde("a", None))
+    assert [p.shortcode for p in got] == ["ICAR001"]

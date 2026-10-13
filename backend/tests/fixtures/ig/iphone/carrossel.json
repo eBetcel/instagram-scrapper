@@ -1,0 +1,14 @@
+{"pk": "3460000000000000001", "id": "3460000000000000001_9000", "code": "ICAR001", "taken_at": 1760010000,
+ "media_type": 8, "product_type": "carousel_container", "has_liked": false, "like_count": 42, "comment_count": 3,
+ "caption": {"pk": "1800000000000000001", "text": "Agenda de outubro: dia 10 show, dia 17 festa", "created_at": 1760010000},
+ "user": {"pk": "9000", "username": "casa.cultural", "full_name": "Casa Cultural", "is_private": false,
+          "profile_pic_url": "https://cdn.example/pp.jpg"},
+ "carousel_media": [
+  {"id": "1_9000", "pk": "1", "media_type": 1,
+   "image_versions2": {"candidates": [{"width": 1080, "height": 1350, "url": "https://cdn.example/ic_1.jpg?stp=x&se=7&_nc_ht=y"}]}},
+  {"id": "2_9000", "pk": "2", "media_type": 1,
+   "image_versions2": {"candidates": [{"width": 1080, "height": 1350, "url": "https://cdn.example/ic_2.jpg"}]}},
+  {"id": "3_9000", "pk": "3", "media_type": 2,
+   "image_versions2": {"candidates": [{"width": 1080, "height": 1920, "url": "https://cdn.example/ic_3_capa.jpg"}]},
+   "video_versions": [{"type": 101, "width": 720, "height": 1280, "url": "https://cdn.example/ic_3.mp4"}]}
+ ]}

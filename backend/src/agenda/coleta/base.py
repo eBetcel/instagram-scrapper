@@ -22,7 +22,12 @@ class ContaBloqueada(Exception):
 
 
 class SemContasDisponiveis(Exception):
-    pass
+    """Nenhuma conta utilizável agora. `disponivel_em`: quando a primeira deve voltar
+    (fim de bloqueio ou de janela de limite), ou None se não há conta alguma."""
+
+    def __init__(self, disponivel_em: datetime | None = None):
+        super().__init__(f"sem contas de coleta disponíveis (próxima: {disponivel_em})")
+        self.disponivel_em = disponivel_em
 
 
 @dataclass

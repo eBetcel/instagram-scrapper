@@ -62,7 +62,19 @@ class PoolContas:
                 s.expunge(conta)
                 return conta
             s.commit()  # persiste resets de janela de contas puladas
-        raise SemContasDisponiveis()
+            disponivel_em = self._proxima_disponivel(s, agora)
+        raise SemContasDisponiveis(disponivel_em)
+
+    def _proxima_disponivel(self, s: Session, agora: datetime) -> datetime | None:
+        """Menor instante futuro em que uma conta não desativada volta a servir:
+        fim do bloqueio ou fim da janela de uso cheia."""
+        momentos = []
+        for conta in s.scalars(select(ContaColeta).where(ContaColeta.status != "desativada")):
+            if conta.bloqueada_ate is not None and conta.bloqueada_ate > agora:
+                momentos.append(conta.bloqueada_ate)
+            elif conta.usos_janela >= self.limite_por_hora and conta.janela_inicio is not None:
+                momentos.append(conta.janela_inicio + JANELA)
+        return min(momentos, default=None)
 
     def marcar_bloqueada(self, conta: ContaColeta, ate: datetime) -> None:
         with self._factory() as s:

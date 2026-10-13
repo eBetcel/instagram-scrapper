@@ -19,7 +19,7 @@ from agenda.coleta.base import (
     PerfilPrivado,
 )
 from agenda.config import get_settings
-from agenda.jobs import enfileirar
+from agenda.jobs import enfileirar, reativar_ou_enfileirar
 from agenda.models import Perfil, Post
 from agenda.storage import Storage
 
@@ -32,8 +32,9 @@ def baixar_url(url: str) -> bytes:
         return resp.read()
 
 
-def _conhecidos(s: Session, shortcodes: list[str]) -> set[str]:
-    return set(s.scalars(select(Post.shortcode).where(Post.shortcode.in_(shortcodes))))
+def _dono(s: Session, shortcode: str) -> int | None:
+    """perfil_id que salvou o shortcode, ou None se ainda não existe."""
+    return s.scalar(select(Post.perfil_id).where(Post.shortcode == shortcode))
 
 
 def coletar_perfil(
@@ -68,8 +69,11 @@ def coletar_perfil(
                 if ancora:
                     continue
                 break
-            if _conhecidos(s, [p.shortcode]):
-                if ancora:
+            dono = _dono(s, p.shortcode)
+            if dono is not None:
+                # Só um post já salvo por ESTE perfil marca o ponto de parada; o de
+                # outro perfil (collab) é só pulado. Atribuição multi-perfil: Fatia 2.
+                if ancora or dono != perfil.id:
                     continue
                 break
             if _salvar_post(s, perfil, p, storage, baixar):
@@ -115,10 +119,16 @@ def _salvar_post(s: Session, perfil: Perfil, p, storage: Storage, baixar) -> boo
 
 
 def agendar_coletas(s: Session, agora: datetime, *, rng: random.Random | None = None) -> int:
-    """Enfileira coletar_perfil para perfis ativos devidos (proxima_coleta_em NULL conta)."""
+    """Garante coletar_perfil para perfis ativos devidos (proxima_coleta_em NULL conta).
+
+    Perfil nunca coletado tem prioridade (`executar_em = agora`, sem jitter); os
+    demais recebem jitter de até 30 min. Um job de coleta morto ('erro') é
+    reativado — senão a chave o bloquearia para sempre. Devolve quantos jobs
+    foram criados ou reativados.
+    """
     rng = rng or random.Random()
-    ids = s.scalars(
-        select(Perfil.id)
+    perfis = s.execute(
+        select(Perfil.id, Perfil.ultima_coleta_em)
         .where(
             Perfil.status == "ativo",
             (Perfil.proxima_coleta_em.is_(None)) | (Perfil.proxima_coleta_em <= agora),
@@ -126,14 +136,14 @@ def agendar_coletas(s: Session, agora: datetime, *, rng: random.Random | None = 
         .order_by(Perfil.id)
     ).all()
     enfileirados = 0
-    for pid in ids:
-        job = enfileirar(
-            s,
-            "coletar_perfil",
-            {"perfil_id": pid},
-            executar_em=agora + timedelta(seconds=rng.uniform(0, JITTER_MAXIMO_SEGUNDOS)),
-            chave=f"coletar:{pid}",
+    for pid, ultima in perfis:
+        if ultima is None:
+            executar_em = agora
+        else:
+            executar_em = agora + timedelta(seconds=rng.uniform(0, JITTER_MAXIMO_SEGUNDOS))
+        r = reativar_ou_enfileirar(
+            s, "coletar_perfil", {"perfil_id": pid}, f"coletar:{pid}", executar_em=executar_em
         )
-        if job is not None:
+        if r != "existente":
             enfileirados += 1
     return enfileirados
