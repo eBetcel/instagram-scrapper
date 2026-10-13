@@ -1,0 +1,4 @@
+{"username":"casax","publicado_em":"2026-10-06T12:00:00-03:00",
+ "eventos":[{"titulo":"Show da Banda A","data_inicio":"2026-11-20","categoria":"show"}],
+ "reconciliacao":{"candidatos":[{"id":7,"titulo":"Show da Banda A","inicio":"2026-10-10T21:00:00-03:00","categoria":"show","artistas":["Banda A"]}],
+  "evento":0,"decisao_esperada":"ATUALIZACAO","evento_id_esperado":7}}

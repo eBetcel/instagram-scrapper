@@ -288,5 +288,9 @@ def _tabela(cabecalho: list[str], linhas: list[tuple[str, ...]]) -> None:
         typer.echo("  ".join(str(c).ljust(w) for c, w in zip(linha, larguras, strict=True)).rstrip())
 
 
+from agenda.avaliacao.cli import avaliar  # noqa: E402
+
+app.command("avaliar")(avaliar)
+
 if __name__ == "__main__":
     app()
