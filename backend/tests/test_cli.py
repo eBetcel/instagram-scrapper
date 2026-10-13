@@ -273,3 +273,22 @@ def test_eventos_filtra_por_cidade_e_periodo(fabrica):
     assert "Show Um" in r.output and "Expo Dois" not in r.output
 
     assert invocar("eventos", "--de", "ontem").exit_code != 0
+
+
+# --- build_deps valida CHAVE_SESSAO cedo ---------------------------------------
+
+
+@pytest.mark.parametrize("chave", ["", "nao-e-fernet"])
+def test_build_deps_recusa_chave_sessao_vazia_ou_invalida(chave, capsys):
+    import typer
+
+    from agenda.cli import build_deps
+    from agenda.config import Settings
+
+    settings = Settings(
+        openai_api_key="sk-teste", openai_modelo_extracao="x", openai_modelo_reconciliacao="y",
+        chave_sessao=chave,
+    )
+    with pytest.raises(typer.Exit):
+        build_deps(settings)
+    assert "CHAVE_SESSAO" in capsys.readouterr().err

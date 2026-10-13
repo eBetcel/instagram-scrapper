@@ -10,10 +10,21 @@ PRECOS_POR_MILHAO: dict[str, tuple[Decimal, Decimal]] = {
 }
 
 
+DATABASE_URL_PADRAO = "postgresql+psycopg://agenda:agenda@localhost:5432/agenda"
+
+
+class ConfigBanco(BaseSettings):
+    """Só o necessário para falar com o banco (Alembic não depende da OpenAI)."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    database_url: str = DATABASE_URL_PADRAO
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+psycopg://agenda:agenda@localhost:5432/agenda"
+    database_url: str = DATABASE_URL_PADRAO
     openai_api_key: str = ""
     # Sem default no código: definidos por variável de ambiente (ver .env.example).
     openai_modelo_extracao: str

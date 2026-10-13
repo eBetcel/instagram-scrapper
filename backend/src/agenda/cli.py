@@ -50,6 +50,18 @@ def normalizar_username(bruto: str) -> str:
     return username
 
 
+def _validar_chave_sessao(chave: str) -> None:
+    """Falha já na partida se CHAVE_SESSAO não for uma chave Fernet (e não na 1ª coleta)."""
+    from cryptography.fernet import Fernet
+
+    if not chave:
+        raise _falhar("CHAVE_SESSAO não configurada (chave Fernet; veja .env.example).")
+    try:
+        Fernet(chave.encode())
+    except ValueError as exc:
+        raise _falhar(f"CHAVE_SESSAO inválida (esperada uma chave Fernet): {exc}") from exc
+
+
 def build_deps(settings: Settings) -> Dependencias:
     """Monta as dependências reais do pipeline a partir das Settings."""
     from openai import OpenAI
@@ -62,6 +74,7 @@ def build_deps(settings: Settings) -> Dependencias:
 
     if not settings.openai_api_key:
         raise _falhar("OPENAI_API_KEY não configurada.")
+    _validar_chave_sessao(settings.chave_sessao)
     client = OpenAI(api_key=settings.openai_api_key)
     pool = PoolContas(get_session_factory(), settings.limite_requisicoes_conta_hora)
     return Dependencias(

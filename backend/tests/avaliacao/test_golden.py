@@ -89,3 +89,26 @@ def test_cli_avaliar_rejeita_etapa_invalida():
 
     r = CliRunner().invoke(app, ["avaliar", "--etapa", "x", "--golden", str(GOLDEN)])
     assert r.exit_code == 1
+
+
+def test_reconciliacao_novo_esperado_ignora_evento_id(tmp_path):
+    import json
+
+    caso = tmp_path / "novo"
+    caso.mkdir()
+    (caso / "esperado.json").write_text(json.dumps({
+        "username": "casa", "publicado_em": "2026-10-06T12:00:00-03:00",
+        "eventos": [{"titulo": "Show", "data_inicio": "2026-10-10"}],
+        "reconciliacao": {
+            "candidatos": [{"id": 3, "titulo": "Outro", "inicio": "2026-10-10T21:00:00-03:00"}],
+            "evento": 0, "decisao_esperada": "NOVO", "evento_id_esperado": None,
+        },
+    }))
+    casos = carregar_casos(tmp_path)
+    # NOVO com evento_id preenchido: aplicar ignora o id (R22), então está certo.
+    novo_com_id = Decisao(decisao="NOVO", evento_id=3, mudancas=[], motivo="x")
+    rel = avaliar_reconciliacao(casos, FakeReconciliador([novo_com_id]))
+    assert rel.total == 1 and rel.acertos_decisao == 1
+    assert rel.total_evento_id == 0 and rel.acertos_evento_id == 0
+    assert rel.erros == []
+    assert "evento_id  0/0" in rel.formatar()

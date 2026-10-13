@@ -169,6 +169,7 @@ class RelatorioDecisao:
     total: int = 0
     acertos_decisao: int = 0
     acertos_evento_id: int = 0
+    total_evento_id: int = 0  # só casos com decisão esperada != NOVO (R22)
     erros: list[str] = field(default_factory=list)
     uso_total: Uso = field(default_factory=lambda: Uso(0, 0, Decimal(0), "-"))
 
@@ -177,7 +178,8 @@ class RelatorioDecisao:
         linhas = [
             "Reconciliação",
             f"  decisão    {self.acertos_decisao}/{self.total} ({self.acertos_decisao / t:.2%})",
-            f"  evento_id  {self.acertos_evento_id}/{self.total} ({self.acertos_evento_id / t:.2%})",
+            f"  evento_id  {self.acertos_evento_id}/{self.total_evento_id} "
+            f"({self.acertos_evento_id / max(self.total_evento_id, 1):.2%}; só DUPLICADO/ATUALIZACAO)",
             *[f"  erro: {e}" for e in self.erros],
             _fmt_uso(self.uso_total),
         ]
@@ -229,9 +231,13 @@ def avaliar_reconciliacao(casos: list[CasoGolden], reconciliador: Reconciliador)
         rel.uso_total = _somar(rel.uso_total, uso)
         rel.total += 1
         ok_dec = decisao.decisao == rec["decisao_esperada"]
-        ok_id = decisao.evento_id == rec.get("evento_id_esperado")
+        # NOVO ignora evento_id (R22): só se compara o id quando se espera um candidato.
+        ok_id = True
+        if rec["decisao_esperada"] != "NOVO":
+            ok_id = decisao.evento_id == rec.get("evento_id_esperado")
+            rel.total_evento_id += 1
+            rel.acertos_evento_id += ok_id
         rel.acertos_decisao += ok_dec
-        rel.acertos_evento_id += ok_id
         if not (ok_dec and ok_id):
             rel.erros.append(
                 f"{caso.nome}: esperado {rec['decisao_esperada']}/{rec.get('evento_id_esperado')}, "

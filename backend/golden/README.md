@@ -50,6 +50,13 @@ custo total. Não faz parte do `pytest` nem do CI.
   reconciliar; `decisao_esperada` é `NOVO`, `DUPLICADO` ou `ATUALIZACAO`;
   `evento_id_esperado` é o `id` do candidato correto, ou `null` para `NOVO`.
 
+## Como a nota é calculada (reconciliação)
+
+- `decisão`: acertos sobre todos os casos com bloco `reconciliacao`.
+- `evento_id`: só nos casos com `decisao_esperada` `DUPLICADO` ou `ATUALIZACAO`
+  (o denominador exclui os `NOVO`). Em `NOVO` o `evento_id` devolvido é ignorado,
+  como faz `aplicar`.
+
 ## Como a nota é calculada (extração)
 
 - Cada evento esperado é pareado com o evento extraído ainda livre de mesma
