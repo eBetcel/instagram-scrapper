@@ -144,3 +144,21 @@ def test_fake_reconciliador_devolve_em_ordem():
     fake = FakeReconciliador([a, b])
     assert fake.decidir(E, [], None) == (a, None)
     assert fake.decidir(E, [], None) == (b, None)
+
+
+def test_candidato_do_mesmo_post_vai_marcado_no_prompt(session):
+    from agenda.models import EventoFonte
+
+    p = post(session, "P1")
+    meu = evento(session, "Agenda: show dia 10")
+    alheio = evento(session, "Agenda: show dia 17")
+    session.add(EventoFonte(evento_id=meu.id, post_id=p.id, decisao="novo"))
+    session.add(EventoFonte(evento_id=alheio.id, post_id=post(session, "P2").id, decisao="novo"))
+    session.flush()
+    cliente = ClienteFalso(_resp(_d("NOVO")))
+    OpenAIReconciliador(cliente, "gpt-4.1-nano").decidir(E, [meu, alheio], p)
+
+    texto = cliente.chamadas[0]["messages"][1]["content"]
+    cands = json.loads(texto.split("Candidatos:\n", 1)[1])
+    assert {c["id"]: c["mesmo_post"] for c in cands} == {meu.id: True, alheio.id: False}
+    assert "mesmo_post" in PROMPT_RECONCILIACAO

@@ -297,3 +297,43 @@ def test_falha_no_meio_nao_deixa_efeito_parcial(session, monkeypatch):
     assert ev.local_nome is None and ev.link_ingresso is None
     # a sessão externa continua utilizável
     assert session.scalar(select(func.count()).select_from(Evento)) == 1
+
+
+# --- revisão final: mesmo post (R30) e hora conhecida -------------------------
+
+
+@pytest.mark.parametrize("decisao", ["ATUALIZACAO", "DUPLICADO"])
+def test_agenda_mensal_reconciliador_errado_contra_evento_do_mesmo_post_vira_novo(
+    session, caplog, decisao
+):
+    p = post(session)
+    primeiro = aplicar(session, E, _d("NOVO"), [], p)
+    outra_data = E.model_copy(update={"data_inicio": date(2026, 11, 27)})
+    mudancas = ["inicio"] if decisao == "ATUALIZACAO" else []
+    with caplog.at_level("WARNING", logger="agenda.reconciliacao.aplicar"):
+        segundo = aplicar(session, outra_data, _d(decisao, primeiro.id, mudancas), [primeiro], p)
+    assert segundo.id != primeiro.id
+    assert primeiro.inicio == INICIO  # o primeiro evento do flyer não foi remarcado
+    assert segundo.inicio == datetime(2026, 11, 27, 20, 0, tzinfo=FUSO)
+    assert _revisoes(session, primeiro) == []
+    assert [f.decisao for f in _fontes(session, segundo)] == ["novo"]
+    assert [r for r in caplog.records if r.levelname == "WARNING"]
+
+
+def test_atualizacao_de_outro_post_com_outro_inicio_continua_valendo(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO)
+    aplicar(session, E, _d("NOVO"), [], post(session, "P0"))  # outro evento, outro post
+    nova = E.model_copy(update={"data_inicio": date(2026, 11, 27)})
+    alvo = aplicar(session, nova, _d("ATUALIZACAO", ev.id, ["inicio"]), [ev], post(session, "P2"))
+    assert alvo.id == ev.id
+    assert ev.inicio == datetime(2026, 11, 27, 20, 0, tzinfo=FUSO)
+
+
+def test_atualizacao_sem_hora_na_mesma_data_nao_apaga_horario(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO, hora_definida=True)
+    sem_hora = E.model_copy(update={"hora_inicio": None, "status_indicado": "esgotado"})
+    aplicar(session, sem_hora, _d("ATUALIZACAO", ev.id, ["inicio", "status"]), [ev], post(session))
+    assert ev.inicio == INICIO
+    assert ev.hora_definida is True
+    assert ev.status == "esgotado"
+    assert {r.campo for r in _revisoes(session, ev)} == {"status"}

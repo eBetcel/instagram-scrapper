@@ -3,10 +3,12 @@ import logging
 from typing import Any, Literal, Protocol, get_args
 
 from pydantic import BaseModel, ConfigDict
+from sqlalchemy import select
+from sqlalchemy.orm import Session, object_session
 
 from agenda.extracao.extrator import Uso, parse_com_retentativa
 from agenda.extracao.schema import EventoExtraido
-from agenda.models import Evento, Post
+from agenda.models import Evento, EventoFonte, Post
 
 log = logging.getLogger(__name__)
 
@@ -44,6 +46,10 @@ distintos: NÃO é duplicado.
 - Em `mudancas`, inclua só campos cujo valor no evento extraído é diferente do \
 valor atual do candidato; nunca inclua campos que o post não informa. Em \
 DUPLICADO e NOVO, use a lista vazia.
+- Um candidato com `"mesmo_post": true` já veio deste mesmo post (por \
+exemplo, outra data de uma agenda mensal ou de um flyer com vários eventos). \
+Ele só é o mesmo evento se o início for o mesmo; com início diferente, a \
+decisão é NOVO — nunca DUPLICADO nem ATUALIZACAO dele.
 - `motivo` é uma frase curta explicando a decisão.
 """
 
@@ -69,13 +75,27 @@ class Reconciliador(Protocol):
     ) -> tuple[Decisao, Uso | None]: ...
 
 
+def eventos_do_post(s: Session, post: Post, candidatos: list[Evento]) -> set[int]:
+    """Ids dos candidatos que já têm este post como fonte."""
+    if not candidatos or post.id is None:
+        return set()
+    return set(
+        s.scalars(
+            select(EventoFonte.evento_id).where(
+                EventoFonte.post_id == post.id,
+                EventoFonte.evento_id.in_([c.id for c in candidatos]),
+            )
+        )
+    )
+
+
 def evento_id_valido(d: Decisao, candidatos: list[Evento]) -> bool:
     if d.decisao == "NOVO":
         return True
     return d.evento_id is not None and d.evento_id in {c.id for c in candidatos}
 
 
-def _candidato_json(c: Evento) -> dict[str, Any]:
+def _candidato_json(c: Evento, mesmo_post: bool) -> dict[str, Any]:
     def iso(v):
         return v.isoformat() if v is not None else None
 
@@ -100,6 +120,7 @@ def _candidato_json(c: Evento) -> dict[str, Any]:
         "link_ingresso": c.link_ingresso,
         "artistas": list(c.artistas or []),
         "status": c.status,
+        "mesmo_post": mesmo_post,
     }
 
 
@@ -112,13 +133,15 @@ class OpenAIReconciliador:
         self, e: EventoExtraido, candidatos: list[Evento], post: Post
     ) -> list[dict[str, Any]]:
         publicado = post.publicado_em.isoformat() if post.publicado_em else "desconhecida"
+        sessao = object_session(post)
+        do_post = eventos_do_post(sessao, post, candidatos) if sessao is not None else set()
         texto = (
             f"Perfil: @{post.perfil.username}\n"
             f"Publicado em: {publicado}\n\n"
             f"Legenda:\n{post.legenda or ''}\n\n"
             f"Evento extraído:\n{json.dumps(e.model_dump(mode='json'), ensure_ascii=False)}\n\n"
             "Candidatos:\n"
-            + json.dumps([_candidato_json(c) for c in candidatos], ensure_ascii=False, indent=1)
+            + json.dumps([_candidato_json(c, c.id in do_post) for c in candidatos], ensure_ascii=False, indent=1)
         )
         return [
             {"role": "system", "content": PROMPT_RECONCILIACAO},

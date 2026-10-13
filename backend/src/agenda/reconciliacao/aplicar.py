@@ -1,6 +1,7 @@
 """Efeitos transacionais da reconciliacao (Etapa C)."""
 
 import json
+import logging
 from datetime import datetime
 from decimal import Decimal
 from typing import Any
@@ -9,7 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
-from agenda.extracao.regras import normalizar_preco, para_fim, para_inicio
+from agenda.extracao.regras import FUSO, normalizar_preco, para_fim, para_inicio
 from agenda.extracao.schema import EventoExtraido
 from agenda.models import Evento, EventoFonte, Post, RevisaoEvento
 from agenda.reconciliacao.candidatos import normalizar_artistas
@@ -19,7 +20,10 @@ from agenda.reconciliacao.decisao import (
     Decisao,
     DecisaoInvalida,
     evento_id_valido,
+    eventos_do_post,
 )
+
+log = logging.getLogger(__name__)
 
 __all__ = ["DecisaoInvalida", "aplicar", "campos_do_evento"]
 
@@ -105,6 +109,8 @@ def _alterar(
     anterior = getattr(ev, campo)
     if anterior == valor:
         return
+    if campo == "inicio" and _so_perde_horario(ev, novo):
+        return
     setattr(ev, campo, valor)
     if campo in _DERIVADAS:
         derivada = _DERIVADAS[campo]
@@ -114,6 +120,16 @@ def _alterar(
             evento_id=ev.id, post_id=post.id, campo=campo,
             valor_anterior=_texto(anterior), valor_novo=_texto(valor), motivo=motivo,
         )
+    )
+
+
+def _so_perde_horario(ev: Evento, novo: dict[str, Any]) -> bool:
+    """O post traz só a data (sem hora), a mesma do evento que já tem horário:
+    trocar `inicio` apagaria a hora conhecida."""
+    return (
+        ev.hora_definida
+        and not novo["hora_definida"]
+        and ev.inicio.astimezone(FUSO).date() == novo["inicio"].astimezone(FUSO).date()
     )
 
 
@@ -158,12 +174,25 @@ def aplicar(
     alvo = _validar(d, candidatos)
     motivo = motivo or d.motivo
     novo = campos_do_evento(e)
+    decisao = d.decisao
+    if (
+        alvo is not None
+        and alvo.inicio != novo["inicio"]
+        and alvo.id in eventos_do_post(s, post, [alvo])
+    ):
+        # R30: o alvo veio deste mesmo post com outro início (agenda mensal, flyer):
+        # é outro evento do post, não o mesmo remarcado.
+        log.warning(
+            "post %s: %s contra o evento %s do mesmo post com outro início; aplicado como NOVO",
+            post.id, decisao, alvo.id,
+        )
+        decisao, alvo = "NOVO", None
     # Em DUPLICADO/ATUALIZACAO, sem status_indicado o post nao informa status:
     # None (ignorado), nunca "ativo" (o default vale so para criar um evento).
     atualizacao = {**novo, "status": e.status_indicado}
 
     with s.begin_nested():
-        if d.decisao == "NOVO":
+        if decisao == "NOVO":
             existente = _ja_criado_pelo_post(s, candidatos, post, novo["inicio"])
             if existente is not None:
                 _duplicado(s, existente, atualizacao, post, motivo)
@@ -175,7 +204,7 @@ def aplicar(
             return ev
 
         assert alvo is not None
-        if d.decisao == "DUPLICADO":
+        if decisao == "DUPLICADO":
             _duplicado(s, alvo, atualizacao, post, motivo)
             return alvo
 
