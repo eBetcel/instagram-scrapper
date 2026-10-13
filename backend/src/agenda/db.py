@@ -15,8 +15,8 @@ def get_session_factory() -> sessionmaker[Session]:
 
 
 @contextmanager
-def session_scope() -> Iterator[Session]:
-    session = get_session_factory()()
+def session_scope(factory: sessionmaker[Session] | None = None) -> Iterator[Session]:
+    session = (factory or get_session_factory())()
     try:
         yield session
         session.commit()

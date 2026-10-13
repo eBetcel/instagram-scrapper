@@ -1,12 +1,14 @@
 """Fila de jobs no Postgres.
 
-Nenhuma função faz commit: a transação pertence a quem chama. Em particular,
-`reservar` depende da transação do chamador para manter o lock da linha até o commit.
+Nenhuma função faz commit: a transação pertence a quem chama. O worker faz commit
+da reserva antes de executar o handler; `executar_em` de um job 'executando' marca
+o início da execução, e `recuperar_travados` devolve à fila os que passaram do limite
+(worker morto no meio).
 """
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -40,7 +42,8 @@ def enfileirar(
 
 
 def reservar(s: Session, tipos: list[str]) -> Job | None:
-    """Pega o próximo job pronto dos `tipos` e o marca como executando (SKIP LOCKED)."""
+    """Pega o próximo job pronto dos `tipos` e o marca como executando (SKIP LOCKED),
+    com `executar_em = now()` (início da execução)."""
     job = s.scalars(
         select(Job)
         .where(Job.tipo.in_(tipos), Job.status == "pendente", Job.executar_em <= func.now())
@@ -50,6 +53,7 @@ def reservar(s: Session, tipos: list[str]) -> Job | None:
     ).one_or_none()
     if job is not None:
         job.status = "executando"
+        job.executar_em = func.now()
         s.flush()
     return job
 
@@ -70,3 +74,22 @@ def falhar(s: Session, job: Job, erro: str) -> None:
         segundos = 2**job.tentativas * _BACKOFF_BASE_SEGUNDOS
         job.executar_em = func.now() + timedelta(seconds=segundos)
     s.flush()
+
+
+def falhar_definitivo(s: Session, job: Job, erro: str) -> None:
+    """Falha terminal: vira 'erro' sem retentativa."""
+    job.tentativas += 1
+    job.erro_msg = erro
+    job.status = "erro"
+    s.flush()
+
+
+def recuperar_travados(s: Session, limite: timedelta = timedelta(minutes=30)) -> int:
+    """Devolve à fila jobs 'executando' há mais de `limite`; retorna quantos."""
+    res = s.execute(
+        update(Job)
+        .where(Job.status == "executando", Job.executar_em < func.now() - limite)
+        .values(status="pendente")
+        .execution_options(synchronize_session=False)
+    )
+    return res.rowcount

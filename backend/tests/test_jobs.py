@@ -3,7 +3,14 @@ from datetime import datetime, timedelta
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from agenda.jobs import concluir, enfileirar, falhar, reservar
+from agenda.jobs import (
+    concluir,
+    enfileirar,
+    falhar,
+    falhar_definitivo,
+    recuperar_travados,
+    reservar,
+)
 from agenda.models import Job
 
 
@@ -126,3 +133,42 @@ def test_enfileirar_sem_chave_nunca_deduplica(session):
     a = enfileirar(session, "t_n", {})
     b = enfileirar(session, "t_n", {})
     assert a is not None and b is not None and a.id != b.id
+
+
+def test_reservar_marca_executar_em_com_agora(session):
+    passado = _agora(session) - timedelta(hours=2)
+    enfileirar(session, "t_res", {}, executar_em=passado)
+    job = reservar(session, ["t_res"])
+    session.refresh(job)
+    assert job.executar_em == _agora(session)
+
+
+def test_recuperar_travados_volta_executando_antigo_para_pendente(session):
+    agora = _agora(session)
+    enfileirar(session, "t_trav", {})
+    travado = reservar(session, ["t_trav"])
+    travado.executar_em = agora - timedelta(minutes=31)
+    enfileirar(session, "t_trav", {})
+    recente = reservar(session, ["t_trav"])
+    recente.executar_em = agora - timedelta(minutes=29)
+    session.flush()
+
+    assert recuperar_travados(session) == 1
+    session.refresh(travado)
+    session.refresh(recente)
+    assert travado.status == "pendente"
+    assert recente.status == "executando"
+    assert recuperar_travados(session, timedelta(minutes=10)) == 1
+    session.refresh(recente)
+    assert recente.status == "pendente"
+
+
+def test_falhar_definitivo_vira_erro_sem_retentativa(session):
+    enfileirar(session, "t_def", {})
+    job = reservar(session, ["t_def"])
+    falhar_definitivo(session, job, "inválida")
+    session.refresh(job)
+    assert job.status == "erro"
+    assert job.tentativas == 1
+    assert job.erro_msg == "inválida"
+    assert reservar(session, ["t_def"]) is None
