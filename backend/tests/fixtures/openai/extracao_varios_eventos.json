@@ -1,0 +1,4 @@
+{"eventos": [
+ {"titulo": "Noite do Samba", "descricao": null, "data_inicio": "2026-11-06", "hora_inicio": "20:00:00", "data_fim": null, "hora_fim": null, "local_nome": "Bar do Zé", "endereco": null, "cidade": "Recife", "categoria": "show", "preco_texto": "R$ 20", "gratuito": false, "preco_min": 20.0, "preco_max": 20.0, "link_ingresso": null, "artistas": ["Ana"], "status_indicado": null, "confianca": {"data_inicio": 0.9, "hora_inicio": 0.8, "local_nome": 0.9}},
+ {"titulo": "Roda de Choro", "descricao": "Entrada franca", "data_inicio": "2026-11-07", "hora_inicio": null, "data_fim": null, "hora_fim": null, "local_nome": "Praça", "endereco": null, "cidade": "Olinda", "categoria": "show", "preco_texto": null, "gratuito": true, "preco_min": null, "preco_max": null, "link_ingresso": null, "artistas": [], "status_indicado": null, "confianca": {"data_inicio": 0.7, "hora_inicio": 0.1, "local_nome": 0.6}}
+]}

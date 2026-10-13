@@ -1,6 +1,13 @@
+from decimal import Decimal
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# (entrada, saida) em USD por 1M de tokens.
+PRECOS_POR_MILHAO: dict[str, tuple[Decimal, Decimal]] = {
+    "gpt-4.1-mini": (Decimal("0.40"), Decimal("1.60")),
+    "gpt-4.1-nano": (Decimal("0.10"), Decimal("0.40")),
+}
 
 
 class Settings(BaseSettings):
