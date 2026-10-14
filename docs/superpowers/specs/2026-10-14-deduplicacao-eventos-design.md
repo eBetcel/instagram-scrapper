@@ -85,7 +85,10 @@ fica salva em `posts.extracao`, sem agrupamento, para auditoria e reprocessament
 Verdadeiro se, com `ta = tokens(a)` e `tb = tokens(b)` não vazios:
 - `normalizar(a) == normalizar(b)`; ou
 - `ta ⊆ tb` ou `tb ⊆ ta`; ou
-- `SequenceMatcher(normalizar(a), normalizar(b)).ratio() >= 0.8`.
+- os tokens que diferem são quase iguais (erro de digitação): com `da = ta - tb` e
+  `db = tb - ta`, `SequenceMatcher(" ".join(sorted(da)), " ".join(sorted(db))).ratio()
+  >= 0.8`. A razão sobre o texto inteiro não serve: as palavras em comum a inflam
+  ("festival mada 2026" × "festival dosol 2026" dá 0,81).
 
 ### 4.3 `mesmo_evento(a, b)`
 
