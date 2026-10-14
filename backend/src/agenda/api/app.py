@@ -4,13 +4,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, FastAPI
+from fastapi import FastAPI
 from sqlalchemy.orm import Session, sessionmaker
 
-from agenda.api.deps import usuario_atual
+from agenda.api import auth
 from agenda.config import ConfigApi
 from agenda.email import EnviadorEmail
-from agenda.models import Usuario
 from agenda.storage import Storage
 
 
@@ -26,13 +25,7 @@ class DependenciasApi:
 def criar_app(deps: DependenciasApi) -> FastAPI:
     app = FastAPI(title="Agenda", docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.deps = deps
-    rotas = APIRouter(prefix="/api")
-
-    @rotas.get("/eu")
-    def eu(u: Usuario = Depends(usuario_atual)) -> dict:
-        return {"id": u.id, "email": u.email, "nome": u.nome}
-
-    app.include_router(rotas)
+    app.include_router(auth.rotas)
     return app
 
 

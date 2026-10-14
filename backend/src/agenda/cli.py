@@ -180,6 +180,33 @@ def coletar(
     typer.echo(f"Coleta enfileirada ou adiantada para {efetivos} de {len(perfis)} perfil(is).")
 
 
+@app.command("convite-criar")
+def convite_criar(
+    usos: Annotated[int, typer.Option("--usos", min=1, help="Quantas contas o código cria.")] = 1,
+    dias: Annotated[int | None, typer.Option("--dias", min=1, help="Validade em dias (sem: não expira).")] = None,
+) -> None:
+    """Cria um código de convite para o piloto (mostrado só agora)."""
+    from agenda.api.seguranca import criar_convite
+
+    with _sessao() as s:
+        codigo = criar_convite(s, usos=usos, dias=dias, agora=datetime.now(UTC))
+    validade = f"por {dias} dia(s)" if dias else "sem validade"
+    typer.echo(f"Convite {codigo} — {usos} uso(s), {validade}.")
+
+
+@app.command("convite-listar")
+def convite_listar() -> None:
+    """Lista os convites (o código não é guardado: só o começo do hash)."""
+    from agenda.models import Convite
+
+    with _sessao() as s:
+        linhas = [
+            (c.codigo_hash[:8], str(c.usos_restantes), _fmt_dt(c.expira_em), _fmt_dt(c.criado_em))
+            for c in s.scalars(select(Convite).order_by(Convite.id))
+        ]
+    _tabela(["hash", "usos restantes", "expira em", "criado em"], linhas)
+
+
 @app.command("api")
 def api(
     porta: Annotated[int, typer.Option("--porta", help="Porta HTTP.")] = 8000,

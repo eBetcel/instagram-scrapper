@@ -16,7 +16,7 @@ from agenda.jobs import enfileirar
 from agenda.models import ContaColeta, Evento, EventoFonte, Job, Perfil, Post
 
 runner = CliRunner()
-TABELAS = "revisoes_evento, evento_fontes, eventos, posts, perfis, jobs, contas_coleta"
+TABELAS = "convites, revisoes_evento, evento_fontes, eventos, posts, perfis, jobs, contas_coleta"
 
 
 @pytest.fixture
@@ -330,3 +330,18 @@ def test_perfil_adicionar_marca_fixo(fabrica):
     assert invocar("perfil-adicionar", "casa_fixa").exit_code == 0
     with fabrica() as s:
         assert s.scalar(select(Perfil.fixo).where(Perfil.username == "casa_fixa")) is True
+
+
+def test_convite_criar_e_listar(fabrica):
+    import re
+
+    from agenda.models import Convite
+
+    r = invocar("convite-criar", "--usos", "3", "--dias", "7")
+    assert r.exit_code == 0, r.output
+    assert re.search(r"[A-HJ-NP-Z2-9]{4}-[A-HJ-NP-Z2-9]{4}", r.output)
+    with fabrica() as s:
+        c = s.scalars(select(Convite)).one()
+        assert c.usos_restantes == 3 and c.expira_em is not None
+    r = invocar("convite-listar")
+    assert r.exit_code == 0 and "3" in r.output
