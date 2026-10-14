@@ -17,7 +17,9 @@ from agenda.extracao.regras import agrupar_festivais
 from agenda.extracao.schema import EventoExtraido
 from agenda.models import Evento, Perfil, Post
 from agenda.reconciliacao.candidatos import normalizar_artistas
+from agenda.reconciliacao.aplicar import campos_do_evento
 from agenda.reconciliacao.decisao import Reconciliador
+from agenda.reconciliacao.identidade import pares_fortes
 
 LIMIAR_TITULO = 0.8
 CAMPOS = ("titulo", "data_inicio", "hora_inicio", "cidade", "categoria", "artistas", "preco_min", "preco_max")
@@ -228,7 +230,13 @@ def avaliar_reconciliacao(casos: list[CasoGolden], reconciliador: Reconciliador)
             perfil=Perfil(username=caso.username),
         )
         evento = _evento_extraido(caso.eventos[rec["evento"]])
-        decisao, uso = reconciliador.decidir(evento, candidatos, post)
+        # Mesmo caminho do pipeline: com par forte, o modelo só vê o par e não pode dizer NOVO.
+        pares = pares_fortes(Evento(**campos_do_evento(evento)), candidatos)
+        if pares:
+            candidatos = [min(pares, key=lambda c: c.id)]
+        decisao, uso = reconciliador.decidir(
+            evento, candidatos, post, exigir_candidato=bool(pares)
+        )
         rel.uso_total = _somar(rel.uso_total, uso)
         rel.total += 1
         ok_dec = decisao.decisao == rec["decisao_esperada"]

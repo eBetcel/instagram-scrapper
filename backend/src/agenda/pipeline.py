@@ -23,7 +23,7 @@ from agenda.reconciliacao.aplicar import aplicar, campos_do_evento
 from agenda.reconciliacao.candidatos import buscar_candidatos
 from agenda.reconciliacao.decisao import Reconciliador, eventos_do_post
 from agenda.reconciliacao.fusao import deduplicar
-from agenda.reconciliacao.identidade import mesmo_evento
+from agenda.reconciliacao.identidade import pares_fortes
 from agenda.storage import Storage
 
 # Chave fixa do pg_advisory_xact_lock que serializa a reconciliação (R11).
@@ -94,9 +94,8 @@ def par_forte(
 ) -> Evento | None:
     """Candidato de outro post que é, deterministicamente, o mesmo evento; com mais de
     um, o de mais fontes (empate: menor id)."""
-    extraido = Evento(**campos_do_evento(e))
     do_post = eventos_do_post(s, post, candidatos)
-    pares = [c for c in candidatos if c.id not in do_post and mesmo_evento(extraido, c)]
+    pares = pares_fortes(Evento(**campos_do_evento(e)), [c for c in candidatos if c.id not in do_post])
     if not pares:
         return None
     fontes = dict(

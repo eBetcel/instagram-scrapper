@@ -49,3 +49,8 @@ def mesmo_evento(a: Evento, b: Evento) -> bool:
     if a.hora_definida and b.hora_definida and not festival and a.inicio != b.inicio:
         return False
     return True
+
+
+def pares_fortes(evento: Evento, candidatos: list[Evento]) -> list[Evento]:
+    """Candidatos que são, deterministicamente, o mesmo evento que `evento`."""
+    return [c for c in candidatos if mesmo_evento(evento, c)]

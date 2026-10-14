@@ -1,3 +1,4 @@
+import json
 from datetime import date, datetime
 from pathlib import Path
 
@@ -124,3 +125,35 @@ def test_relatorio_extracao_pontua_atracoes_agrupadas_no_festival():
     rel = avaliar_extracao(casos, ext)
     assert rel.eventos_extraidos == 1
     assert rel.acuracia["titulo"] == 1.0
+
+
+class Registrador:
+    def __init__(self):
+        self.chamadas = []
+
+    def decidir(self, e, candidatos, post, *, exigir_candidato=False):
+        self.chamadas.append(([c.id for c in candidatos], exigir_candidato))
+        return Decisao(decisao="DUPLICADO", evento_id=candidatos[0].id, mudancas=[], motivo="x"), None
+
+
+def test_reconciliacao_do_golden_segue_o_par_forte_como_o_pipeline(tmp_path):
+    caso = tmp_path / "festival"
+    caso.mkdir()
+    (caso / "legenda.txt").write_text("Siba no festival")
+    (caso / "esperado.json").write_text(json.dumps({
+        "username": "dosol", "publicado_em": "2026-10-13T12:00:00-03:00",
+        "eventos": [{"titulo": "Festival DoSol 2026", "data_inicio": "2026-11-28",
+                     "festival": "Festival DoSol 2026"}],
+        "reconciliacao": {
+            "candidatos": [
+                {"id": 1, "titulo": "Festival DoSol 2026", "inicio": "2026-11-27T19:00:00-03:00"},
+                {"id": 2, "titulo": "Festival do Sol", "inicio": "2026-11-28T16:00:00-03:00",
+                 "festival": "Festival DoSol 2026"},
+            ],
+            "evento": 0, "decisao_esperada": "DUPLICADO", "evento_id_esperado": 2,
+        },
+    }))
+    reg = Registrador()
+    rel = avaliar_reconciliacao(carregar_casos(tmp_path), reg)
+    assert reg.chamadas == [([2], True)]
+    assert rel.acertos_decisao == 1
