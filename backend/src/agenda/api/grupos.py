@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session
 from agenda.api.deps import deps_api, sessao_db, usuario_atual, usuario_opcional
 from agenda.api.esquemas import GrupoDetalhe, GrupoSaida, PerfilNoGrupo
 from agenda.models import Grupo, GrupoPerfil, GrupoSeguidor, Perfil, Usuario
-from agenda.texto import slugificar
+from agenda.jobs import reativar_ou_enfileirar
+from agenda.texto import normalizar_username, slugificar
 
 rotas = APIRouter(prefix="/api")
 
@@ -78,6 +79,51 @@ def status_perfil(p: Perfil) -> str:
     if p.status in ("privado", "inexistente"):
         return p.status
     return "coletando" if p.ultima_coleta_em is None else "ativo"
+
+
+class PerfilEntrada(BaseModel):
+    username: str
+
+
+@rotas.post("/grupos/{slug}/perfis", status_code=201)
+def adicionar_perfil(slug: str, dados: PerfilEntrada, response: Response,
+                     s: Session = Depends(sessao_db), u: Usuario = Depends(usuario_atual),
+                     deps=Depends(deps_api)) -> PerfilNoGrupo:
+    g = grupo_do_dono(s, slug, u)
+    username = normalizar_username(dados.username)
+    if username is None:
+        raise HTTPException(422, "@ inválido: use letras, dígitos, '.' e '_', até 30 caracteres")
+    perfil = s.scalar(select(Perfil).where(Perfil.username == username))
+    if perfil is not None and s.get(GrupoPerfil, (g.id, perfil.id)) is not None:
+        response.status_code = 200
+        return PerfilNoGrupo(username=username, status=status_perfil(perfil))
+    limite = deps.config.limite_perfis_por_usuario
+    dela = select(GrupoPerfil.perfil_id).join(Grupo, Grupo.id == GrupoPerfil.grupo_id).where(Grupo.dono_id == u.id)
+    ja_e_dela = perfil is not None and s.scalar(dela.where(GrupoPerfil.perfil_id == perfil.id).limit(1))
+    if not ja_e_dela and s.scalar(select(func.count(func.distinct(dela.subquery().c.perfil_id)))) >= limite:
+        raise HTTPException(422, f"No piloto, cada pessoa acompanha até {limite} @s somando seus grupos")
+    if perfil is None:
+        perfil = Perfil(username=username)
+        s.add(perfil)
+        s.flush()
+    s.add(GrupoPerfil(grupo_id=g.id, perfil_id=perfil.id))
+    if perfil.ultima_coleta_em is None and perfil.status == "ativo":
+        reativar_ou_enfileirar(s, "coletar_perfil", {"perfil_id": perfil.id}, f"coletar:{perfil.id}")
+    s.flush()
+    return PerfilNoGrupo(username=username, status=status_perfil(perfil))
+
+
+@rotas.delete("/grupos/{slug}/perfis/{username}", status_code=204)
+def remover_perfil(slug: str, username: str, s: Session = Depends(sessao_db),
+                   u: Usuario = Depends(usuario_atual)):
+    g = grupo_do_dono(s, slug, u)
+    removidas = s.execute(delete(GrupoPerfil).where(
+        GrupoPerfil.grupo_id == g.id,
+        GrupoPerfil.perfil_id.in_(select(Perfil.id).where(Perfil.username == (normalizar_username(username) or ""))),
+    )).rowcount
+    if not removidas:
+        raise HTTPException(404, "Esse @ não está no grupo")
+    return Response(status_code=204)
 
 
 @rotas.get("/grupos")

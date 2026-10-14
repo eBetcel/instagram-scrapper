@@ -15,3 +15,12 @@ def normalizar(texto: str | None) -> str:
 def slugificar(nome: str) -> str:
     """'Jazz em Natal' -> 'jazz-em-natal'; sem letras nem dígitos -> 'grupo'."""
     return "-".join(normalizar(nome).replace("_", " ").split()) or "grupo"
+
+
+_USERNAME = re.compile(r"^[a-z0-9._]{1,30}$")
+
+
+def normalizar_username(bruto: str) -> str | None:
+    """'  @Casa.Azul ' -> 'casa.azul'; None se não for um @ válido do Instagram."""
+    username = bruto.strip().removeprefix("@").lower()
+    return username if _USERNAME.match(username) else None

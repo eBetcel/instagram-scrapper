@@ -5,7 +5,6 @@ comandos de worker chamam `build_deps`, então os demais funcionam sem chave da 
 """
 
 import pickle
-import re
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -15,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
 from agenda.config import Settings, get_settings
+from agenda import texto
 from agenda.db import get_session_factory, session_scope
 from agenda.extracao.regras import FUSO
 from agenda.jobs import reativar_ou_enfileirar
@@ -24,7 +24,6 @@ from agenda.pipeline import Dependencias
 app = typer.Typer(help="Administração do núcleo de dados da agenda cultural.", no_args_is_help=True)
 
 # Instagram: letras, dígitos, '.' e '_' (até 30 caracteres).
-_USERNAME_RE = re.compile(r"^[a-z0-9._]{1,30}$")
 TIPOS_PADRAO = "coletar_perfil,extrair_post"
 
 
@@ -42,8 +41,8 @@ def _falhar(msg: str) -> typer.Exit:
 
 
 def normalizar_username(bruto: str) -> str:
-    username = bruto.strip().removeprefix("@").lower()
-    if not _USERNAME_RE.match(username):
+    username = texto.normalizar_username(bruto)
+    if username is None:
         raise _falhar(
             f"Username inválido: {bruto!r} (use letras, dígitos, '.' e '_', até 30 caracteres)."
         )
