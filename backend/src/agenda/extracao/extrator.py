@@ -1,5 +1,6 @@
 import base64
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
@@ -16,6 +17,12 @@ from agenda.imagens import redimensionar
 log = logging.getLogger(__name__)
 
 TENTATIVAS = 2
+# Legenda com lista de datas ("03/10 SÃO PAULO", "18.10. Jáder"): a extração é refeita
+# até RELEITURAS vezes se trouxer menos da metade dos eventos da lista. Mesmo com
+# temperature=0, a mesma entrada já rendeu 12 eventos numa chamada e 1 na seguinte.
+MIN_LINHAS_LISTA = 3
+RELEITURAS = 2
+_LINHA_COM_DATA = re.compile(r"^\s*\d{1,2}\s*[./]\s*\d{1,2}\b", re.MULTILINE)
 
 T = TypeVar("T")
 
@@ -140,6 +147,16 @@ def parse_com_retentativa(
     raise RespostaInvalida(f"resposta inválida após {TENTATIVAS} tentativas", uso())
 
 
+def linhas_com_data(legenda: str) -> int:
+    """Quantas linhas da legenda começam com uma data (dia/mês ou dia.mês)."""
+    return len(_LINHA_COM_DATA.findall(legenda or ""))
+
+
+def _somar_uso(a: Uso, b: Uso) -> Uso:
+    return Uso(a.tokens_entrada + b.tokens_entrada, a.tokens_saida + b.tokens_saida,
+               a.custo + b.custo, a.modelo)
+
+
 class OpenAIExtrator:
     def __init__(self, client: Any, modelo: str):
         self.client = client
@@ -165,11 +182,40 @@ class OpenAIExtrator:
             {"role": "user", "content": partes},
         ]
 
+    @staticmethod
+    def _com_aviso_de_lista(mensagens: list[dict[str, Any]], linhas: int) -> list[dict[str, Any]]:
+        sistema, usuario = mensagens
+        texto, *imagens = usuario["content"]
+        aviso = (
+            f"\n\nAtenção: a legenda tem {linhas} linhas que começam com uma data. Cada uma "
+            "é um evento (data, cidade e local da linha) e deve virar um item em `eventos`, "
+            "mesmo que o post destaque só um deles."
+        )
+        texto = {**texto, "text": texto["text"] + aviso}
+        return [sistema, {**usuario, "content": [texto, *imagens]}]
+
     def extrair(
         self, legenda: str, imagens: list[bytes], username: str, publicado_em: datetime
     ) -> Resultado:
         mensagens = self._mensagens(legenda, imagens, username, publicado_em)
         extracao, uso = parse_com_retentativa(self.client, self.modelo, mensagens, ExtracaoPost)
+        lista = linhas_com_data(legenda)
+        if lista < MIN_LINHAS_LISTA:
+            return Resultado(extracao, uso)
+        releitura = self._com_aviso_de_lista(mensagens, lista)
+        for _ in range(RELEITURAS):
+            if 2 * len(extracao.eventos) >= lista:
+                break
+            log.warning(
+                "legenda com %d datas e só %d eventos extraídos; refazendo",
+                lista, len(extracao.eventos),
+            )
+            outra, uso_outra = parse_com_retentativa(
+                self.client, self.modelo, releitura, ExtracaoPost
+            )
+            uso = _somar_uso(uso, uso_outra)
+            if len(outra.eventos) > len(extracao.eventos):
+                extracao = outra
         return Resultado(extracao, uso)
 
 

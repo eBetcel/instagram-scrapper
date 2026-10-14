@@ -177,3 +177,64 @@ def test_fake_extrator_por_username():
     assert r.extracao == ev
     assert r.uso == Uso(tokens_entrada=0, tokens_saida=0, custo=Decimal(0), modelo="fake")
     assert fake.extrair("l", [], "outra", PUBLICADO).extracao.eventos == []
+
+
+# --- legenda com lista de datas: refaz a extração que perde eventos -------------
+
+TURNE = """Jambu em turnê nacional, datas e cidades na legenda!
+
+03/10 SÃO PAULO/SP @casarockambole
+8/10 FORTALEZA/CE @casamercuriofortaleza
+9/10 NATAL/RN @festivaldosol
+14/10 ARACAJU/SE @clashpubnrestaurant
+15/10 SALVADOR/BA @casa141.ruadomeio
+30/10 MANAUS/AM @reddogpub
+"""
+
+
+def _n_eventos(n: int) -> ExtracaoPost:
+    base = _fixture("extracao_varios_eventos.json").eventos[0]
+    return ExtracaoPost(eventos=[base.model_copy(update={"titulo": f"Show {i}"}) for i in range(n)])
+
+
+def test_linhas_com_data_conta_listas_de_agenda():
+    from agenda.extracao.extrator import linhas_com_data
+    assert linhas_com_data(TURNE) == 6
+    assert linhas_com_data("AGENDA\n18.10. Jáder (PE)\n22.10. Giovanna\n 24.10 Portas") == 3
+    assert linhas_com_data("Nesta sexta, 18/10, às 20h") == 0
+
+
+def test_lista_de_datas_com_poucos_eventos_refaz_e_fica_com_a_mais_completa():
+    cliente = ClienteFalso(_resp(_n_eventos(1), entrada=10, saida=1), _resp(_n_eventos(6), entrada=20, saida=2))
+    r = OpenAIExtrator(cliente, "m").extrair(TURNE, [], "jambu", PUBLICADO)
+    assert len(r.extracao.eventos) == 6
+    assert len(cliente.chamadas) == 2
+    assert (r.uso.tokens_entrada, r.uso.tokens_saida) == (30, 3)
+
+
+def test_lista_de_datas_sempre_incompleta_desiste_e_fica_com_a_melhor():
+    cliente = ClienteFalso(_resp(_n_eventos(1)), _resp(_n_eventos(2)), _resp(_n_eventos(1)))
+    r = OpenAIExtrator(cliente, "m").extrair(TURNE, [], "jambu", PUBLICADO)
+    assert len(r.extracao.eventos) == 2
+    assert len(cliente.chamadas) == 3
+
+
+def test_lista_de_datas_bem_extraida_nao_refaz():
+    cliente = ClienteFalso(_resp(_n_eventos(4)))
+    OpenAIExtrator(cliente, "m").extrair(TURNE, [], "jambu", PUBLICADO)
+    assert len(cliente.chamadas) == 1
+
+
+def test_legenda_sem_lista_nao_refaz():
+    cliente = ClienteFalso(_resp(_n_eventos(1)))
+    OpenAIExtrator(cliente, "m").extrair("Show sexta, 18/10", [], "casa", PUBLICADO)
+    assert len(cliente.chamadas) == 1
+
+
+def test_releitura_avisa_quantas_linhas_com_data_a_legenda_tem():
+    cliente = ClienteFalso(_resp(_n_eventos(1)), _resp(_n_eventos(6)))
+    OpenAIExtrator(cliente, "m").extrair(TURNE, [], "jambu", PUBLICADO)
+    primeira = cliente.chamadas[0]["messages"][1]["content"][0]["text"]
+    segunda = cliente.chamadas[1]["messages"][1]["content"][0]["text"]
+    assert "6 linhas" not in primeira
+    assert "6 linhas que começam com uma data" in segunda
