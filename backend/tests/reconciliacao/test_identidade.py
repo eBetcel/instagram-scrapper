@@ -85,3 +85,22 @@ def test_titulos_diferentes_mas_mesmo_festival_sao_o_mesmo():
     b = _ev("Festival MADA 2026 - Dia 1", inicio=datetime(2026, 10, 16, tzinfo=FUSO),
             festival="MADA 2026")
     assert mesmo_evento(a, b)
+
+
+def test_ano_nao_diferencia_nomes():
+    assert nomes_parecidos("Festival DoSol 2026", "Festival DoSol Interior")
+    assert nomes_parecidos("Festival MADA 2026", "Festival MADA")
+    assert not nomes_parecidos("Festival MADA 2026", "Festival DoSol 2026")
+
+
+def test_estado_no_campo_cidade_nao_separa():
+    natal = _ev("Festival MADA 2026", cidade="Natal")
+    assert mesmo_evento(natal, _ev("Festival MADA 2026", cidade="RN"))
+    assert mesmo_evento(natal, _ev("Festival MADA 2026", cidade="Rio Grande do Norte"))
+    assert not mesmo_evento(natal, _ev("Festival MADA 2026", cidade="Mossoró"))
+
+
+def test_cidades_homonimas_de_estado_continuam_cidades():
+    assert cidade_norm("São Paulo") == "sao paulo"
+    assert cidade_norm("Rio de Janeiro") == "rio de janeiro"
+    assert not mesmo_evento(_ev("Turnê X", cidade="São Paulo"), _ev("Turnê X", cidade="Recife"))

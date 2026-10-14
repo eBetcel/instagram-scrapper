@@ -11,15 +11,29 @@ PALAVRAS_VAZIAS = frozenset(
     "a o as os de da do das dos e em no na nos nas com para pra por".split()
 )
 LIMIAR_DIGITACAO = 0.8
+# Sigla ou nome de estado no campo cidade não diz a cidade: conta como vazio.
+# São Paulo e Rio de Janeiro ficam de fora: no campo cidade, quase sempre são a capital.
+ESTADOS = frozenset([
+    "ac", "al", "ap", "am", "ba", "ce", "df", "es", "go", "ma", "mt", "ms", "mg", "pa", "pb",
+    "pr", "pe", "pi", "rj", "rn", "rs", "ro", "rr", "sc", "sp", "se", "to",
+    "acre", "alagoas", "amapa", "amazonas", "bahia", "ceara", "distrito federal",
+    "espirito santo", "goias", "maranhao", "mato grosso", "mato grosso do sul",
+    "minas gerais", "para", "paraiba", "parana", "pernambuco", "piaui",
+    "rio grande do norte", "rio grande do sul", "rondonia", "roraima", "santa catarina",
+    "sergipe", "tocantins",
+])
+_ANO = re.compile(r"^(19|20)\d\d$")
 
 
 def tokens(texto: str | None) -> set[str]:
-    return set(normalizar(texto).split()) - PALAVRAS_VAZIAS
+    """Tokens sem palavras vazias nem ano ("Festival DoSol 2026" ~ "Festival DoSol")."""
+    return {t for t in normalizar(texto).split() if t not in PALAVRAS_VAZIAS and not _ANO.match(t)}
 
 
 def cidade_norm(cidade: str | None) -> str:
-    """'ARACAJU/SE' -> 'aracaju'; 'Natal - RN' -> 'natal'."""
-    return normalizar(re.split(r"[/-]", cidade or "")[0])
+    """'ARACAJU/SE' -> 'aracaju'; 'Natal - RN' -> 'natal'; 'RN' -> '' (estado)."""
+    nome = normalizar(re.split(r"[/-]", cidade or "")[0])
+    return "" if nome in ESTADOS else nome
 
 
 def nomes_parecidos(a: str | None, b: str | None) -> bool:
@@ -44,7 +58,8 @@ def mesmo_evento(a: Evento, b: Evento) -> bool:
         or (festival and nomes_parecidos(a.festival, b.festival))
     ):
         return False
-    if a.cidade and b.cidade and cidade_norm(a.cidade) != cidade_norm(b.cidade):
+    ca, cb = cidade_norm(a.cidade), cidade_norm(b.cidade)
+    if ca and cb and ca != cb:
         return False
     if a.hora_definida and b.hora_definida and not festival and a.inicio != b.inicio:
         return False
