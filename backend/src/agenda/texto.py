@@ -10,3 +10,8 @@ def normalizar(texto: str | None) -> str:
         c for c in unicodedata.normalize("NFKD", texto or "") if not unicodedata.combining(c)
     )
     return " ".join(re.sub(r"[^\w]+", " ", sem_acento.lower()).split())
+
+
+def slugificar(nome: str) -> str:
+    """'Jazz em Natal' -> 'jazz-em-natal'; sem letras nem dígitos -> 'grupo'."""
+    return "-".join(normalizar(nome).replace("_", " ").split()) or "grupo"

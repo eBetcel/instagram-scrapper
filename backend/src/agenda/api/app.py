@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from fastapi import FastAPI
 from sqlalchemy.orm import Session, sessionmaker
 
-from agenda.api import auth
+from agenda.api import auth, grupos
 from agenda.config import ConfigApi
 from agenda.email import EnviadorEmail
 from agenda.storage import Storage
@@ -26,6 +26,7 @@ def criar_app(deps: DependenciasApi) -> FastAPI:
     app = FastAPI(title="Agenda", docs_url="/api/docs", openapi_url="/api/openapi.json")
     app.state.deps = deps
     app.include_router(auth.rotas)
+    app.include_router(grupos.rotas)
     return app
 
 
