@@ -131,7 +131,7 @@ def test_conta_adicionar_sem_chave_falha(fabrica, tmp_path, monkeypatch):
 
 def criar_post(fabrica, extracao=None, status="erro"):
     with fabrica.begin() as s:
-        p = Perfil(username="casa")
+        p = Perfil(fixo=True, username="casa")
         s.add(p)
         s.flush()
         post = Post(perfil_id=p.id, shortcode="ABC", status=status, extracao=extracao,
@@ -238,7 +238,7 @@ def sp(ano, mes, dia, h=0, m=0):
 
 def test_eventos_filtra_por_cidade_e_periodo(fabrica):
     with fabrica.begin() as s:
-        p = Perfil(username="casa")
+        p = Perfil(fixo=True, username="casa")
         s.add(p)
         s.flush()
         post = Post(perfil_id=p.id, shortcode="A")
@@ -324,3 +324,9 @@ def test_deduplicar_com_aplicar_funde(fabrica):
     assert r.exit_code == 0, r.output
     assert "1 fusão" in r.output
     assert _n_eventos(fabrica) == 1
+
+
+def test_perfil_adicionar_marca_fixo(fabrica):
+    assert invocar("perfil-adicionar", "casa_fixa").exit_code == 0
+    with fabrica() as s:
+        assert s.scalar(select(Perfil.fixo).where(Perfil.username == "casa_fixa")) is True

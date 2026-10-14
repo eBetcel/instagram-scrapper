@@ -94,7 +94,7 @@ def perfil_adicionar(username: str) -> None:
         if s.scalar(select(Perfil.id).where(Perfil.username == username)) is not None:
             typer.echo(f"Perfil @{username} já existe.")
             return
-        s.add(Perfil(username=username, proxima_coleta_em=func.now()))
+        s.add(Perfil(username=username, proxima_coleta_em=func.now(), fixo=True))
     typer.echo(f"Perfil @{username} adicionado.")
 
 

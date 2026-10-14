@@ -34,7 +34,7 @@ def post(sc, dias=1, imgs=1, fixado=False):
 
 @pytest.fixture
 def perfil(session):
-    p = Perfil(username="casa")
+    p = Perfil(fixo=True, username="casa")
     session.add(p)
     session.flush()
     return p
@@ -168,9 +168,9 @@ def test_agendar_nao_duplica_job_pendente(session, perfil):
 
 def test_agendar_ignora_futuros_e_inativos(session):
     session.add_all([
-        Perfil(username="fut", proxima_coleta_em=AGORA + timedelta(hours=1)),
-        Perfil(username="priv", status="privado"),
-        Perfil(username="ok", proxima_coleta_em=AGORA),
+        Perfil(fixo=True, username="fut", proxima_coleta_em=AGORA + timedelta(hours=1)),
+        Perfil(fixo=True, username="priv", status="privado"),
+        Perfil(fixo=True, username="ok", proxima_coleta_em=AGORA),
     ])
     session.flush()
     assert agendar_coletas(session, AGORA) == 1
@@ -195,7 +195,7 @@ def test_intervalo_padrao_vem_das_settings(session, perfil, monkeypatch):
 
 
 def test_post_ja_salvo_por_outro_perfil_e_pulado_sem_parar_a_coleta(session, perfil):
-    outro = Perfil(username="parceiro")
+    outro = Perfil(fixo=True, username="parceiro")
     session.add(outro)
     session.flush()
     session.add(Post(perfil_id=outro.id, shortcode="colab"))
@@ -230,8 +230,8 @@ def test_agendar_reativa_job_de_coleta_em_erro(session, perfil):
 
 
 def test_agendar_perfil_novo_sem_jitter_e_devido_com_jitter(session):
-    novo = Perfil(username="novo")  # nunca coletado: prioridade
-    velho = Perfil(username="velho", ultima_coleta_em=AGORA - timedelta(hours=7),
+    novo = Perfil(fixo=True, username="novo")  # nunca coletado: prioridade
+    velho = Perfil(fixo=True, username="velho", ultima_coleta_em=AGORA - timedelta(hours=7),
                    proxima_coleta_em=AGORA - timedelta(hours=1))
     session.add_all([novo, velho])
     session.flush()
@@ -244,3 +244,20 @@ def test_agendar_perfil_novo_sem_jitter_e_devido_com_jitter(session):
     em = dict(session.execute(select(Job.chave, Job.executar_em)).all())
     assert em[f"coletar:{novo.id}"] == AGORA
     assert em[f"coletar:{velho.id}"] == AGORA + timedelta(minutes=30)
+
+
+def test_agendador_ignora_perfil_sem_grupo_e_nao_fixo(session):
+    from agenda.models import Grupo, GrupoPerfil, Usuario
+
+    dono = Usuario(email="dona@x.com", nome="Dona")
+    session.add(dono)
+    session.flush()
+    grupo = Grupo(dono_id=dono.id, nome="Jazz", slug="jazz")
+    em_grupo, fixo, solto = Perfil(username="emgrupo"), Perfil(username="fixo", fixo=True), Perfil(username="solto")
+    session.add_all([grupo, em_grupo, fixo, solto])
+    session.flush()
+    session.add(GrupoPerfil(grupo_id=grupo.id, perfil_id=em_grupo.id))
+    session.flush()
+    assert agendar_coletas(session, AGORA) == 2
+    chaves = set(session.scalars(select(Job.chave).where(Job.tipo == "coletar_perfil")))
+    assert chaves == {f"coletar:{em_grupo.id}", f"coletar:{fixo.id}"}

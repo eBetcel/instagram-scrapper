@@ -20,7 +20,7 @@ from agenda.coleta.base import (
 )
 from agenda.config import get_settings
 from agenda.jobs import enfileirar, reativar_ou_enfileirar
-from agenda.models import Perfil, Post
+from agenda.models import GrupoPerfil, Perfil, Post
 from agenda.storage import Storage
 
 JANELA_PRIMEIRA_COLETA = timedelta(days=30)
@@ -132,6 +132,8 @@ def agendar_coletas(s: Session, agora: datetime, *, rng: random.Random | None = 
         .where(
             Perfil.status == "ativo",
             (Perfil.proxima_coleta_em.is_(None)) | (Perfil.proxima_coleta_em <= agora),
+            # Só quem algum grupo acompanha, ou cadastrado pela CLI.
+            Perfil.fixo | select(GrupoPerfil.perfil_id).where(GrupoPerfil.perfil_id == Perfil.id).exists(),
         )
         .order_by(Perfil.id)
     ).all()

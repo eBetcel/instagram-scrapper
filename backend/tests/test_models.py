@@ -66,3 +66,31 @@ def test_artistas_norm_default_vazio(session):
 
 def test_pg_trgm_disponivel(session):
     assert session.execute(text("SELECT similarity('abc','abd')")).scalar() > 0
+
+
+def test_perfil_novo_nao_e_fixo_por_padrao(session):
+    from agenda.models import Perfil as P
+    p = P(username="novo_perfil")
+    session.add(p)
+    session.flush()
+    session.refresh(p)
+    assert p.fixo is False
+
+
+def test_apagar_grupo_apaga_perfis_e_seguidores_do_grupo(session):
+    from sqlalchemy import delete, func, select
+
+    from agenda.models import Grupo, GrupoPerfil, GrupoSeguidor, Perfil as P, Usuario
+
+    dono, fa = Usuario(email="a@x.com", nome="A"), Usuario(email="b@x.com", nome="B")
+    p = P(username="casa_cascata")
+    session.add_all([dono, fa, p])
+    session.flush()
+    g = Grupo(dono_id=dono.id, nome="G", slug="g")
+    session.add(g)
+    session.flush()
+    session.add_all([GrupoPerfil(grupo_id=g.id, perfil_id=p.id), GrupoSeguidor(grupo_id=g.id, usuario_id=fa.id)])
+    session.flush()
+    session.execute(delete(Grupo).where(Grupo.id == g.id))
+    assert session.scalar(select(func.count()).select_from(GrupoPerfil)) == 0
+    assert session.scalar(select(func.count()).select_from(GrupoSeguidor)) == 0

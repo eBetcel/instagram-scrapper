@@ -90,7 +90,7 @@ def criar_perfis(fabrica, *usernames):
     """Perfis com coleta já enfileirada (mesma chave usada pelo agendador)."""
     with fabrica.begin() as s:
         for u in usernames:
-            p = Perfil(username=u)
+            p = Perfil(fixo=True, username=u)
             s.add(p)
             s.flush()
             enfileirar(s, "coletar_perfil", {"perfil_id": p.id}, chave=f"coletar:{p.id}")
@@ -386,7 +386,7 @@ def test_falha_no_segundo_evento_desfaz_o_primeiro(fabrica):
 
 def test_worker_de_coleta_agenda_perfis_devidos(fabrica):
     with fabrica.begin() as s:
-        s.add(Perfil(username="casa"))
+        s.add(Perfil(fixo=True, username="casa"))
     # perfil nunca coletado: agendado sem jitter, então já roda na mesma passada
     assert rodar(fabrica, deps(), ["coletar_perfil"]) == 1
     with fabrica() as s:
@@ -396,14 +396,14 @@ def test_worker_de_coleta_agenda_perfis_devidos(fabrica):
 
 def test_worker_de_reconciliacao_nao_agenda_coletas(fabrica):
     with fabrica.begin() as s:
-        s.add(Perfil(username="casa"))
+        s.add(Perfil(fixo=True, username="casa"))
     rodar(fabrica, deps(), ["reconciliar_post"])
     assert contar(fabrica, Job) == 0
 
 
 def test_worker_recupera_job_travado_ao_iniciar(fabrica):
     with fabrica.begin() as s:
-        p = Perfil(username="casa")
+        p = Perfil(fixo=True, username="casa")
         s.add(p)
         s.flush()
         job = enfileirar(s, "coletar_perfil", {"perfil_id": p.id}, chave=f"coletar:{p.id}")
@@ -435,7 +435,7 @@ def test_worker_ocioso_dorme_e_volta_a_procurar(fabrica):
 
 
 def test_tratar_reconciliar_post_ignora_post_ja_reconciliado(session):
-    perfil = Perfil(username="casa")
+    perfil = Perfil(fixo=True, username="casa")
     session.add(perfil)
     session.flush()
     p = Post(perfil_id=perfil.id, shortcode="P1", status="reconciliado",
@@ -536,7 +536,7 @@ class Registrador:
 
 
 def test_par_forte_de_outro_post_vai_sozinho_e_exige_candidato(session):
-    perfil = Perfil(username="dosol")
+    perfil = Perfil(fixo=True, username="dosol")
     session.add(perfil)
     session.flush()
     dia = HOJE + timedelta(days=20)
@@ -566,7 +566,7 @@ def test_par_forte_de_outro_post_vai_sozinho_e_exige_candidato(session):
 
 
 def test_fim_da_reconciliacao_funde_duplicatas_do_dia_tocado(session):
-    perfil = Perfil(username="casa")
+    perfil = Perfil(fixo=True, username="casa")
     session.add(perfil)
     session.flush()
     dia = HOJE + timedelta(days=15)

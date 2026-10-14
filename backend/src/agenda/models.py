@@ -43,6 +43,8 @@ class Perfil(Base):
     ultima_coleta_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     proxima_coleta_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Cadastrado pela CLI: coletado mesmo sem estar em grupo.
+    fixo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
 
 
 class ContaColeta(Base):
@@ -194,3 +196,80 @@ class Job(Base):
     max_tentativas: Mapped[int] = mapped_column(Integer, server_default="5", default=5)
     executar_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     erro_msg: Mapped[str | None] = mapped_column(Text)
+
+
+# --- usuários e curadoria --------------------------------------------------------
+
+TS = DateTime(timezone=True)
+
+
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    email: Mapped[str] = mapped_column(Text, unique=True)
+    nome: Mapped[str] = mapped_column(Text)
+    criado_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+
+
+class Convite(Base):
+    __tablename__ = "convites"
+    __table_args__ = (CheckConstraint("usos_restantes >= 0", name="ck_convites_usos"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    codigo_hash: Mapped[str] = mapped_column(Text, unique=True)
+    usos_restantes: Mapped[int] = mapped_column(Integer)
+    expira_em: Mapped[datetime | None] = mapped_column(TS)
+    criado_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+
+
+class TokenLogin(Base):
+    __tablename__ = "tokens_login"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(Text, unique=True)
+    expira_em: Mapped[datetime] = mapped_column(TS)
+    usado_em: Mapped[datetime | None] = mapped_column(TS)
+    criado_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+
+
+class Sessao(Base):
+    __tablename__ = "sessoes"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)
+    token_hash: Mapped[str] = mapped_column(Text, unique=True)
+    expira_em: Mapped[datetime] = mapped_column(TS)
+    criado_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+
+
+class Grupo(Base):
+    __tablename__ = "grupos"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    dono_id: Mapped[int] = mapped_column(ForeignKey("usuarios.id", ondelete="CASCADE"), index=True)
+    nome: Mapped[str] = mapped_column(Text)
+    descricao: Mapped[str | None] = mapped_column(Text)
+    slug: Mapped[str] = mapped_column(Text, unique=True)
+    criado_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+
+    dono: Mapped[Usuario] = relationship()
+
+
+class GrupoPerfil(Base):
+    __tablename__ = "grupo_perfis"
+
+    grupo_id: Mapped[int] = mapped_column(ForeignKey("grupos.id", ondelete="CASCADE"), primary_key=True)
+    perfil_id: Mapped[int] = mapped_column(ForeignKey("perfis.id", ondelete="CASCADE"), primary_key=True, index=True)
+    adicionado_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+
+
+class GrupoSeguidor(Base):
+    __tablename__ = "grupo_seguidores"
+
+    grupo_id: Mapped[int] = mapped_column(ForeignKey("grupos.id", ondelete="CASCADE"), primary_key=True)
+    usuario_id: Mapped[int] = mapped_column(
+        ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True, index=True
+    )
+    seguido_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
