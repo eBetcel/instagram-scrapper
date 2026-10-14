@@ -170,10 +170,11 @@ Mobile-first, pt-BR, datas em São Paulo.
   ❌ cancelado, 🔴 esgotado, ⏸ adiado). Sem grupos: convite para criar um.
 - `/evento/[id]` (público): detalhes, artistas, fontes com link para o Instagram e
   histórico de revisões.
-- `/grupos` (logado): meus grupos e seguidos; criar grupo; no grupo próprio, editar
-  nome/descrição, adicionar e remover @s (com o status de cada um) e copiar o link.
+- `/grupos` (logado): meus grupos e seguidos; criar grupo.
 - `/g/[slug]` (público): nome, curador, @s e próximos eventos; botão Seguir/Deixar de
-  seguir (sem sessão, leva a `/entrar`); metadados Open Graph com nome e descrição.
+  seguir (sem sessão, leva a `/entrar`); metadados Open Graph com nome e descrição. Para
+  o dono, a mesma página edita nome/descrição, adiciona e remove @s (com o status de
+  cada um), copia o link e apaga o grupo.
 - `/conta` (logado): nome, e-mail e "Sair".
 - Sem sessão nas páginas logadas → redireciona para `/entrar`.
 
