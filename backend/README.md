@@ -1,14 +1,15 @@
-# Agenda cultural — núcleo de dados (Fatia 1)
+# Agenda cultural — backend (núcleo de dados e api)
 
 Coleta posts de perfis do Instagram (instaloader), extrai eventos com a OpenAI e os
 reconcilia numa base única de eventos. O Postgres é a fonte da verdade e também a
-fila de jobs: `coletar_perfil` → `extrair_post` → `reconciliar_post`.
+fila de jobs: `coletar_perfil` → `extrair_post` → `reconciliar_post`. A api (FastAPI)
+serve o produto web do piloto: convites, login por link mágico, grupos e agenda.
 
 ## Pré-requisitos
 
 - [uv](https://docs.astral.sh/uv/) (instala o Python 3.12 e as dependências).
-- Docker com Compose (Postgres 16 e SeaweedFS como S3 local; os testes também usam
-  Docker via testcontainers).
+- Docker com Compose (Postgres 16, SeaweedFS como S3 local e Mailpit como SMTP de
+  desenvolvimento; os testes também usam Docker via testcontainers).
 - Uma chave da OpenAI e pelo menos uma conta **dedicada** do Instagram para a coleta
   (nunca use a sua conta pessoal).
 
@@ -58,6 +59,29 @@ uv run agenda perfil-adicionar casadeshows
 uv run agenda perfil-listar
 uv run agenda coletar                     # força a coleta agora (todos ou --perfil X)
 ```
+
+Perfis cadastrados pela CLI são "fixos": coletados sempre. Os demais (adicionados a
+grupos pela api) só são coletados enquanto estiverem em algum grupo.
+
+## Api (produto web)
+
+```sh
+uv run agenda api --porta 8010        # rotas em /api; documentação em /api/docs
+uv run agenda convite-criar --usos 5 --dias 14   # mostra o código só agora
+uv run agenda convite-listar
+```
+
+- Quem já tem conta pede o link em `POST /api/auth/entrar`; e-mail novo precisa de um
+  código de convite e do nome. O link vale 15 minutos e uma vez; a sessão, 30 dias
+  (cookie `sessao`).
+- Em desenvolvimento, os e-mails vão para o Mailpit: <http://localhost:8025>. Os serviços
+  do `docker compose` sobem a partir da raiz do repositório.
+- Variáveis (ver `.env.example`): `APP_URL` (origem do front, usada no link do e-mail),
+  `SMTP_*`, `EMAIL_REMETENTE`, `COOKIE_SEGURO` (`true` em produção, com HTTPS),
+  `LIMITE_GRUPOS_POR_USUARIO` (10) e `LIMITE_PERFIS_POR_USUARIO` (30 @s distintos somando
+  os grupos de quem os criou). A api não precisa das variáveis da OpenAI.
+- O front (Next.js) repassa `/api/*` para a api: no navegador, tudo fica na origem do
+  front, e o cookie de sessão também.
 
 ## Workers
 
