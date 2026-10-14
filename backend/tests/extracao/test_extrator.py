@@ -74,6 +74,8 @@ def test_extrai_varios_eventos_de_um_flyer():
     )
     assert cliente.chamadas[0]["response_format"] is ExtracaoPost
     assert cliente.chamadas[0]["model"] == "gpt-4.1-mini"
+    # Determinístico: com a temperatura padrão (1,0) o mesmo post recebia decisões diferentes.
+    assert cliente.chamadas[0]["temperature"] == 0
 
 
 def test_post_sem_evento_retorna_lista_vazia():

@@ -35,7 +35,9 @@ nem nas imagens, use null (ou lista vazia em `artistas`).
 cinema, oficina, festival, outro. Na dúvida, use "outro".
 - `cidade` só quando o nome da cidade aparece escrito no post (legenda, \
 imagem, endereço ou hashtag como #natalrn). Não deduza a cidade pelo nome do \
-local, do bairro ou do perfil: sem o nome escrito, use null.
+local, do bairro ou do perfil: sem o nome escrito, use null. A sigla de \
+estado ao lado do nome de um artista ("Jáder (PE)", "Black Pantera (MG)") diz \
+de onde o artista é, não onde é o evento: não é cidade.
 - Datas no formato ISO (AAAA-MM-DD) e horas no formato HH:MM:SS, no fuso de \
 São Paulo. Resolva datas relativas ("sexta que vem", "amanhã") a partir da \
 data de publicação informada.
@@ -111,7 +113,7 @@ def parse_com_retentativa(
     for tentativa in range(1, TENTATIVAS + 1):
         try:
             resp = client.chat.completions.parse(
-                model=modelo, messages=mensagens, response_format=response_format
+                model=modelo, messages=mensagens, response_format=response_format, temperature=0
             )
         except (ValidationError, LengthFinishReasonError, ContentFilterFinishReasonError) as e:
             completion = getattr(e, "completion", None)

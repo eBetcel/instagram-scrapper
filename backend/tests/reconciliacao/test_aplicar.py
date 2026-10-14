@@ -378,3 +378,58 @@ def test_atualizacao_listando_campo_que_o_post_nao_informa_e_duplicado(session):
     aplicar(session, sem_cidade, _d("ATUALIZACAO", ev.id, ["cidade", "link_ingresso"]), [ev], post(session))
     assert ev.cidade == "Belo Horizonte" and ev.link_ingresso == "https://ingressos.example/jazz"
     assert [f.decisao for f in _fontes(session, ev)] == ["duplicado"]
+
+
+# --- NOVO com casamento forte vira DUPLICADO ----------------------------------
+
+DIA_FESTIVAL = datetime(2026, 12, 5, 0, 0, tzinfo=FUSO)
+FESTIVAL = extraido(
+    titulo="Festival Dosol 2026", data_inicio=date(2026, 12, 5), local_nome="Sede Dosol",
+    categoria="festival", artistas=[],
+)
+
+
+def _festival(s, **kw):
+    dados = {"local_nome": "Sede Cultural Dosol", "hora_definida": False, "categoria": "festival", **kw}
+    return evento(s, "Festival Dosol 2026 na Sede Cultural Dosol", DIA_FESTIVAL, **dados)
+
+
+def test_novo_com_casamento_forte_e_aplicado_como_duplicado(session):
+    ev = _festival(session)
+    r = aplicar(session, FESTIVAL, _d("NOVO"), [ev], post(session))
+    assert r.id == ev.id
+    assert _n(session, Evento) == 1
+    assert [f.decisao for f in _fontes(session, ev)] == ["duplicado"]
+
+
+def test_novo_com_artistas_diferentes_continua_novo(session):
+    ev = evento(session, "Baile da Amada com Jader", DIA_FESTIVAL, local_nome="Arena das Dunas",
+                hora_definida=False, artistas=["Jader"])
+    belisa = extraido(titulo="Baile da Amada com Belisa", data_inicio=date(2026, 12, 5),
+                      local_nome="Arena das Dunas", artistas=["Belisa"])
+    assert aplicar(session, belisa, _d("NOVO"), [ev], post(session)).id != ev.id
+
+
+def test_novo_com_artista_so_de_um_lado_continua_novo(session):
+    ev = evento(session, "Baile da Amada", DIA_FESTIVAL, local_nome="Arena das Dunas", hora_definida=False)
+    belisa = extraido(titulo="Baile da Amada com Belisa", data_inicio=date(2026, 12, 5),
+                      local_nome="Arena das Dunas", artistas=["Belisa"])
+    assert aplicar(session, belisa, _d("NOVO"), [ev], post(session)).id != ev.id
+
+
+def test_novo_em_outro_local_continua_novo(session):
+    ev = _festival(session, local_nome="Palco Frisson")
+    assert aplicar(session, FESTIVAL, _d("NOVO"), [ev], post(session)).id != ev.id
+
+
+def test_novo_em_outro_dia_continua_novo(session):
+    ev = evento(session, "Festival Dosol 2026", datetime(2026, 12, 4, tzinfo=FUSO),
+                local_nome="Sede Dosol", hora_definida=False)
+    assert aplicar(session, FESTIVAL, _d("NOVO"), [ev], post(session)).id != ev.id
+
+
+def test_novo_com_horarios_definidos_diferentes_continua_novo(session):
+    ev = evento(session, "Festival Dosol 2026", datetime(2026, 12, 5, 16, 0, tzinfo=FUSO),
+                local_nome="Sede Dosol", hora_definida=True)
+    noite = FESTIVAL.model_copy(update={"hora_inicio": time(21, 0)})
+    assert aplicar(session, noite, _d("NOVO"), [ev], post(session)).id != ev.id
