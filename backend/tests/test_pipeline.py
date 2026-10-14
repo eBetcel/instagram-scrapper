@@ -56,7 +56,7 @@ def postado(sc, imgs=1):
 class PrimeiroCandidato:
     """Reconciliador falso: DUPLICADO do primeiro candidato, NOVO sem candidatos."""
 
-    def decidir(self, e, candidatos, post):
+    def decidir(self, e, candidatos, post, **kw):
         if candidatos:
             return Decisao(decisao="DUPLICADO", evento_id=candidatos[0].id, mudancas=[],
                            motivo="mesmo show"), None
@@ -294,7 +294,7 @@ class ReconciliadorComUso:
     def __init__(self, uso):
         self.uso = uso
 
-    def decidir(self, e, candidatos, post):
+    def decidir(self, e, candidatos, post, **kw):
         return NOVO, self.uso
 
 
@@ -351,7 +351,7 @@ class FalhaNoSegundo:
     def __init__(self):
         self.chamadas = 0
 
-    def decidir(self, e, candidatos, post):
+    def decidir(self, e, candidatos, post, **kw):
         self.chamadas += 1
         if self.chamadas == 2:
             raise ConnectionError("caiu no segundo evento")
@@ -521,3 +521,45 @@ def test_atracoes_do_festival_viram_um_evento_por_dia(fabrica):
     ] * 2
     assert eventos[0].artistas == ["Zeca Pagodinho", "Belisa"]
     assert eventos[1].artistas == ["Emicida"]
+
+
+
+class Registrador:
+    """Reconciliador falso que registra o que recebeu e responde DUPLICADO do primeiro."""
+
+    def __init__(self):
+        self.chamadas = []
+
+    def decidir(self, e, candidatos, post, *, exigir_candidato=False):
+        self.chamadas.append(([c.id for c in candidatos], exigir_candidato))
+        return Decisao(decisao="DUPLICADO", evento_id=candidatos[0].id, mudancas=[], motivo="m"), None
+
+
+def test_par_forte_de_outro_post_vai_sozinho_e_exige_candidato(session):
+    perfil = Perfil(username="dosol")
+    session.add(perfil)
+    session.flush()
+    dia = HOJE + timedelta(days=20)
+    antigo = Post(perfil_id=perfil.id, shortcode="A", status="reconciliado")
+    session.add(antigo)
+    session.flush()
+    alvo = Evento(titulo="Festival Dosol 2026 na Sede Cultural Dosol", categoria="festival",
+                  inicio=datetime.combine(dia, datetime.min.time(), tzinfo=FUSO), hora_definida=False)
+    outro = Evento(titulo="Festival Dosol 2026", categoria="festival",
+                   inicio=datetime.combine(dia - timedelta(days=1), datetime.min.time(), tzinfo=FUSO),
+                   hora_definida=False)
+    session.add_all([alvo, outro])
+    session.flush()
+    session.add(EventoFonte(evento_id=alvo.id, post_id=antigo.id, decisao="novo"))
+    novo = Post(perfil_id=perfil.id, shortcode="B", status="extraido", extracao=ExtracaoPost(eventos=[
+        show("Festival Dosol 2026", dias=20, local_nome="Sede Dosol", artistas=[], cidade=None)
+    ]).model_dump(mode="json"))
+    session.add(novo)
+    session.flush()
+    job = enfileirar(session, "reconciliar_post", {"post_id": novo.id})
+    reg = Registrador()
+
+    tratar_reconciliar_post(session, job, deps(reconciliador=reg))
+
+    assert reg.chamadas == [([alvo.id], True)]
+    assert session.scalar(select(func.count()).select_from(Evento)) == 2

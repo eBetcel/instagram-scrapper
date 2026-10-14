@@ -2,11 +2,8 @@
 
 import json
 import logging
-import re
-import unicodedata
 from datetime import datetime
 from decimal import Decimal
-from difflib import SequenceMatcher
 from typing import Any
 
 from sqlalchemy import select
@@ -161,48 +158,6 @@ def _so_preenche(ev: Evento, mudancas: list[str], novo: dict[str, Any], status: 
     )
 
 
-def _norm(texto: str | None) -> str:
-    sem_acento = "".join(
-        c for c in unicodedata.normalize("NFKD", texto or "") if not unicodedata.combining(c)
-    )
-    return " ".join(re.sub(r"[^\w]+", " ", sem_acento.lower()).split())
-
-
-def _parecidos(a: str | None, b: str | None) -> bool:
-    """Mesmo nome com ou sem complemento ("Sede Dosol" e "Sede Cultural Dosol")."""
-    na, nb = _norm(a), _norm(b)
-    if not na or not nb:
-        return False
-    ta, tb = set(na.split()), set(nb.split())
-    return na == nb or ta <= tb or tb <= ta or SequenceMatcher(None, na, nb).ratio() >= 0.85
-
-
-def _casamento_forte(
-    s: Session, candidatos: list[Evento], post: Post, novo: dict[str, Any]
-) -> Evento | None:
-    """Rede de segurança para um NOVO do modelo: candidato de outro post no mesmo dia,
-    com local e título parecidos, artistas compatíveis e sem horários conflitantes."""
-    dia = novo["inicio"].astimezone(FUSO).date()
-    do_post = eventos_do_post(s, post, candidatos)
-    artistas = set(novo["artistas_norm"])
-
-    def forte(c: Evento) -> bool:
-        dele = set(c.artistas_norm or [])
-        # Sem artistas dos dois lados, ou com algum em comum; só de um lado não basta.
-        artistas_ok = bool(artistas & dele) if (artistas or dele) else True
-        horario_ok = not (c.hora_definida and novo["hora_definida"] and c.inicio != novo["inicio"])
-        return (
-            c.id not in do_post
-            and c.inicio.astimezone(FUSO).date() == dia
-            and horario_ok
-            and artistas_ok
-            and _parecidos(c.local_nome, novo["local_nome"])
-            and _parecidos(c.titulo, novo["titulo"])
-        )
-
-    return next((c for c in sorted(candidatos, key=lambda c: c.id) if forte(c)), None)
-
-
 def _ja_criado_pelo_post(
     s: Session, candidatos: list[Evento], post: Post, inicio: datetime
 ) -> Evento | None:
@@ -271,14 +226,6 @@ def aplicar(
             if existente is not None:
                 _duplicado(s, existente, atualizacao, post, motivo)
                 return existente
-            forte = _casamento_forte(s, candidatos, post, novo)
-            if forte is not None:
-                log.warning(
-                    "post %s: NOVO do modelo, mas o evento %s é o mesmo (dia, local e título); "
-                    "aplicado como DUPLICADO", post.id, forte.id,
-                )
-                _duplicado(s, forte, atualizacao, post, motivo)
-                return forte
             ev = Evento(**novo)
             s.add(ev)
             s.flush()

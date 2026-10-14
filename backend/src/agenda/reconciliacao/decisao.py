@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session, object_session
 
-from agenda.extracao.extrator import Uso, parse_com_retentativa
+from agenda.extracao.extrator import RespostaInvalida, Uso, parse_com_retentativa
 from agenda.extracao.schema import EventoExtraido
 from agenda.models import Evento, EventoFonte, Post
 
@@ -80,9 +80,16 @@ class DecisaoInvalida(Exception):
     pass
 
 
+AVISO_PAR_FORTE = (
+    "\n\nO candidato acima é o mesmo evento (mesmo dia e nome parecido): a decisão é "
+    "DUPLICADO ou ATUALIZACAO dele, nunca NOVO."
+)
+
+
 class Reconciliador(Protocol):
     def decidir(
-        self, e: EventoExtraido, candidatos: list[Evento], post: Post
+        self, e: EventoExtraido, candidatos: list[Evento], post: Post,
+        *, exigir_candidato: bool = False,
     ) -> tuple[Decisao, Uso | None]: ...
 
 
@@ -161,19 +168,36 @@ class OpenAIReconciliador:
         ]
 
     def decidir(
-        self, e: EventoExtraido, candidatos: list[Evento], post: Post
+        self, e: EventoExtraido, candidatos: list[Evento], post: Post,
+        *, exigir_candidato: bool = False,
     ) -> tuple[Decisao, Uso | None]:
+        """Com `exigir_candidato`, `candidatos` é só o par forte: NOVO é inválido e,
+        esgotadas as tentativas, a decisão é DUPLICADO dele."""
         if not candidatos:
             return Decisao(decisao="NOVO", evento_id=None, mudancas=[], motivo="sem candidatos"), None
         mensagens = self._mensagens(e, candidatos, post)
+        if exigir_candidato:
+            mensagens[1]["content"] += AVISO_PAR_FORTE
 
         def validar(d: Decisao) -> bool:
+            if exigir_candidato and d.decisao == "NOVO":
+                log.warning("NOVO com par forte")
+                return False
             if evento_id_valido(d, candidatos):
                 return True
             log.warning("evento_id %r fora dos candidatos", d.evento_id)
             return False
 
-        return parse_com_retentativa(self.client, self.modelo, mensagens, Decisao, validar)
+        try:
+            return parse_com_retentativa(self.client, self.modelo, mensagens, Decisao, validar)
+        except RespostaInvalida as erro:
+            if not exigir_candidato:
+                raise
+            par = candidatos[0]
+            return Decisao(
+                decisao="DUPLICADO", evento_id=par.id, mudancas=[],
+                motivo="par forte; modelo não decidiu",
+            ), erro.uso
 
 
 class FakeReconciliador:
@@ -181,6 +205,7 @@ class FakeReconciliador:
         self.decisoes = list(decisoes)
 
     def decidir(
-        self, e: EventoExtraido, candidatos: list[Evento], post: Post
+        self, e: EventoExtraido, candidatos: list[Evento], post: Post,
+        *, exigir_candidato: bool = False,
     ) -> tuple[Decisao, Uso | None]:
         return self.decisoes.pop(0), None

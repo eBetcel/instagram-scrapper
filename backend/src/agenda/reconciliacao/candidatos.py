@@ -12,6 +12,7 @@ from agenda.models import Evento
 
 JANELA_PASSADO = timedelta(days=7)
 LIMIAR_LOCAL = 0.5
+LIMIAR_MESMO_DIA = 0.3
 
 
 def normalizar_artistas(nomes: list[str]) -> list[str]:
@@ -32,9 +33,11 @@ def buscar_candidatos(
     e: EventoExtraido,
     *,
     agora: datetime,
-    limite: int = 5,
+    limite: int = 10,
     limiar_titulo: float = 0.4,
 ) -> list[Evento]:
+    janela = func.coalesce(Evento.fim, Evento.inicio) >= agora - JANELA_PASSADO
+    do_dia = _do_mesmo_dia(s, e, janela, limite)
     criterios = []
     escore = literal(0.0, Float)
 
@@ -61,14 +64,34 @@ def buscar_candidatos(
         criterios.append(local)
         escore = escore + case((local, 1.0), else_=0.0)
 
-    if not criterios:
-        return []
+    if not criterios or len(do_dia) >= limite:
+        return do_dia
 
-    janela = func.coalesce(Evento.fim, Evento.inicio) >= agora - JANELA_PASSADO
     stmt = (
         select(Evento)
-        .where(janela, or_(*criterios))
+        .where(janela, or_(*criterios), Evento.id.not_in([c.id for c in do_dia]))
         .order_by(escore.desc(), Evento.inicio.asc())
+        .limit(limite - len(do_dia))
+    )
+    return do_dia + list(s.scalars(stmt))
+
+
+def _do_mesmo_dia(s: Session, e: EventoExtraido, janela, limite: int) -> list[Evento]:
+    """Eventos do mesmo dia com título ou festival parecido: entram sempre, para que o
+    par certo não seja empurrado para fora por títulos parecidos em outras datas."""
+    if e.data_inicio is None:
+        return []
+    nomes = [n for n in (e.titulo, e.festival) if n and n.strip()]
+    if not nomes:
+        return []
+    sim = func.greatest(
+        *[func.similarity(func.coalesce(col, ""), n) for col in (Evento.titulo, Evento.festival) for n in nomes]
+    )
+    mesmo_dia = cast(func.timezone(FUSO.key, Evento.inicio), Date) == e.data_inicio
+    stmt = (
+        select(Evento)
+        .where(janela, mesmo_dia, sim >= LIMIAR_MESMO_DIA)
+        .order_by(sim.desc(), Evento.id)
         .limit(limite)
     )
     return list(s.scalars(stmt))

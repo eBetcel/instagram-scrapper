@@ -162,3 +162,19 @@ def test_candidato_do_mesmo_post_vai_marcado_no_prompt(session):
     cands = json.loads(texto.split("Candidatos:\n", 1)[1])
     assert {c["id"]: c["mesmo_post"] for c in cands} == {meu.id: True, alheio.id: False}
     assert "mesmo_post" in PROMPT_RECONCILIACAO
+
+
+def test_exigir_candidato_rejeita_novo_e_cai_em_duplicado(session):
+    ev = evento(session, "Festival Jazz na Praça")
+    cliente = ClienteFalso(_resp(_d("NOVO"), entrada=10, saida=1), _resp(_d("NOVO"), entrada=20, saida=2))
+    d, uso = OpenAIReconciliador(cliente, "m").decidir(E, [ev], post(session), exigir_candidato=True)
+    assert (d.decisao, d.evento_id) == ("DUPLICADO", ev.id)
+    assert (uso.tokens_entrada, uso.tokens_saida) == (30, 3)
+    assert "mesmo evento" in cliente.chamadas[0]["messages"][1]["content"]
+
+
+def test_exigir_candidato_aceita_atualizacao(session):
+    ev = evento(session, "Festival Jazz na Praça")
+    cliente = ClienteFalso(_resp(_d("ATUALIZACAO", ev.id, ["preco_min"])))
+    d, _ = OpenAIReconciliador(cliente, "m").decidir(E, [ev], post(session), exigir_candidato=True)
+    assert (d.decisao, d.evento_id) == ("ATUALIZACAO", ev.id)

@@ -63,11 +63,11 @@ def test_exposicao_longa_em_andamento_ainda_e_candidata(session):
     assert buscar_candidatos(session, e, agora=AGORA) == [ev]
 
 
-def test_respeita_limite_de_5(session):
-    for i in range(7):
+def test_respeita_limite_de_10(session):
+    for i in range(12):
         _evento(session, f"Festival Jazz na Praça {i}")
     e = _extraido(titulo="Festival Jazz na Praça")
-    assert len(buscar_candidatos(session, e, agora=AGORA)) == 5
+    assert len(buscar_candidatos(session, e, agora=AGORA)) == 10
 
 
 def test_mesmo_titulo_em_outro_local_ainda_e_candidato_mas_nao_o_unico(session):
@@ -93,3 +93,23 @@ def test_sem_candidatos_retorna_lista_vazia(session):
 def test_sem_criterios_retorna_vazio(session):
     _evento(session, "Oficina de Cerâmica")
     assert buscar_candidatos(session, _extraido(), agora=AGORA) == []
+
+
+def test_inclui_o_do_mesmo_dia_mesmo_com_muitos_titulos_parecidos_em_outras_datas(session):
+    from agenda.extracao.regras import FUSO
+    for i in range(12):
+        _evento(session, "Festival Dosol 2026", datetime(2026, 11, 1 + i, tzinfo=FUSO), hora_definida=False)
+    alvo = _evento(session, "Festival Dosol 2026 na Sede Cultural Dosol",
+                   datetime(2026, 12, 5, tzinfo=FUSO), hora_definida=False)
+    e = _extraido(titulo="Festival Dosol 2026", data_inicio=date(2026, 12, 5), local_nome="Sede Dosol")
+    cands = buscar_candidatos(session, e, agora=AGORA)
+    assert alvo in cands
+    assert len(cands) <= 10
+
+
+def test_inclui_o_do_mesmo_dia_pelo_festival(session):
+    from agenda.extracao.regras import FUSO
+    alvo = _evento(session, "MADA — Música Alimento da Alma", datetime(2026, 10, 16, tzinfo=FUSO),
+                   hora_definida=False, festival="Festival MADA 2026")
+    e = _extraido(titulo="Festival MADA 2026", data_inicio=date(2026, 10, 16), festival="Festival MADA 2026")
+    assert alvo in buscar_candidatos(session, e, agora=AGORA)
