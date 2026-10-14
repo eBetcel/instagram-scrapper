@@ -81,7 +81,10 @@ primeira conta voltar, sem gastar tentativa; bloqueios aparecem no log como ERRO
 uv run agenda eventos --cidade "São Paulo" --de 2026-10-01 --ate 2026-10-31
 uv run agenda post-reprocessar <shortcode>                         # refaz extração + reconciliação
 uv run agenda post-reprocessar <shortcode> --etapa reconciliacao   # reaproveita a extração
+uv run agenda deduplicar                    # lista duplicatas (mesmo dia, nome parecido); --aplicar funde
 ```
+
+O worker de reconciliação já funde as duplicatas do dia de cada evento que um post toca.
 
 ## Avaliação (golden set)
 

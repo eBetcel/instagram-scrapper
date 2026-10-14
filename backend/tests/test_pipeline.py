@@ -563,3 +563,25 @@ def test_par_forte_de_outro_post_vai_sozinho_e_exige_candidato(session):
 
     assert reg.chamadas == [([alvo.id], True)]
     assert session.scalar(select(func.count()).select_from(Evento)) == 2
+
+
+def test_fim_da_reconciliacao_funde_duplicatas_do_dia_tocado(session):
+    perfil = Perfil(username="casa")
+    session.add(perfil)
+    session.flush()
+    dia = HOJE + timedelta(days=15)
+    inicio = datetime.combine(dia, datetime.min.time(), tzinfo=FUSO)
+    session.add_all([
+        Evento(titulo="Festival Dosol 2026", categoria="festival", inicio=inicio, hora_definida=False),
+        Evento(titulo="Festival Dosol 2026 na Sede", categoria="festival", inicio=inicio, hora_definida=False),
+    ])
+    p = Post(perfil_id=perfil.id, shortcode="P1", status="extraido", extracao=ExtracaoPost(
+        eventos=[show("Oficina de Cerâmica", dias=15, artistas=[])]).model_dump(mode="json"))
+    session.add(p)
+    session.flush()
+    job = enfileirar(session, "reconciliar_post", {"post_id": p.id})
+
+    tratar_reconciliar_post(session, job, deps(reconciliador=FakeReconciliador([NOVO])))
+
+    titulos = sorted(session.scalars(select(Evento.titulo)))
+    assert len(titulos) == 2 and "Oficina de Cerâmica" in titulos

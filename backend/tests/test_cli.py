@@ -292,3 +292,35 @@ def test_build_deps_recusa_chave_sessao_vazia_ou_invalida(chave, capsys):
     with pytest.raises(typer.Exit):
         build_deps(settings)
     assert "CHAVE_SESSAO" in capsys.readouterr().err
+
+
+def _duplicatas(fabrica):
+    from agenda.extracao.regras import FUSO
+    dia = (datetime.now(UTC) + timedelta(days=10)).astimezone(FUSO).replace(hour=0, minute=0, second=0, microsecond=0)
+    with fabrica() as s:
+        s.add_all([
+            Evento(titulo="Festival Dosol 2026", inicio=dia, hora_definida=False, categoria="festival"),
+            Evento(titulo="Festival Dosol 2026 na Sede", inicio=dia, hora_definida=False, categoria="festival"),
+        ])
+        s.commit()
+
+
+def _n_eventos(fabrica):
+    with fabrica() as s:
+        return len(list(s.scalars(select(Evento))))
+
+
+def test_deduplicar_sem_aplicar_so_lista(fabrica):
+    _duplicatas(fabrica)
+    r = invocar("deduplicar")
+    assert r.exit_code == 0, r.output
+    assert "Festival Dosol 2026" in r.output and "simulação" in r.output
+    assert _n_eventos(fabrica) == 2
+
+
+def test_deduplicar_com_aplicar_funde(fabrica):
+    _duplicatas(fabrica)
+    r = invocar("deduplicar", "--aplicar")
+    assert r.exit_code == 0, r.output
+    assert "1 fusão" in r.output
+    assert _n_eventos(fabrica) == 1

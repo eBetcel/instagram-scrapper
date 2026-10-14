@@ -101,7 +101,8 @@ def _vincular(s: Session, ev: Evento, post: Post, decisao: str) -> None:
 
 
 def _alterar(
-    s: Session, ev: Evento, campo: str, novo: dict[str, Any], post: Post, motivo: str | None
+    s: Session, ev: Evento, campo: str, novo: dict[str, Any], post: Post | None,
+    motivo: str | None,
 ) -> None:
     """Grava `campo` (e sua coluna derivada) se o valor novo nao for vazio e
     diferir do atual, com uma RevisaoEvento."""
@@ -119,7 +120,7 @@ def _alterar(
         setattr(ev, derivada, novo[derivada])
     s.add(
         RevisaoEvento(
-            evento_id=ev.id, post_id=post.id, campo=campo,
+            evento_id=ev.id, post_id=post.id if post else None, campo=campo,
             valor_anterior=_texto(anterior), valor_novo=_texto(valor), motivo=motivo,
         )
     )

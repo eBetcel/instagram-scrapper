@@ -283,6 +283,30 @@ def eventos(
     _tabela(["título", "início", "local", "cidade", "status", "fontes"], linhas)
 
 
+@app.command("deduplicar")
+def deduplicar_cmd(
+    aplicar: Annotated[bool, typer.Option("--aplicar", help="Funde de verdade (sem ele, só simula).")] = False,
+) -> None:
+    """Funde eventos duplicados (mesmo dia e nome parecido); sem --aplicar, só lista."""
+    from agenda.reconciliacao.fusao import deduplicar
+
+    s = fabrica_sessoes()()
+    try:
+        titulos = {e.id: (e.titulo, _fmt_inicio(e)) for e in s.scalars(select(Evento))}
+        fusoes = deduplicar(s, agora=datetime.now(FUSO))
+        for manter, removido in fusoes:
+            titulo, quando = titulos[removido]
+            typer.echo(f"{manter} <- {removido}  {titulo} ({quando})")
+        if aplicar:
+            s.commit()
+            typer.echo(f"{len(fusoes)} fusão(ões) aplicada(s).")
+        else:
+            s.rollback()
+            typer.echo(f"{len(fusoes)} fusão(ões) na simulação; use --aplicar para gravar.")
+    finally:
+        s.close()
+
+
 def _fmt_inicio(e: Evento) -> str:
     local = e.inicio.astimezone(FUSO)
     return local.strftime("%d/%m %H:%M") if e.hora_definida else local.strftime("%d/%m --:--")

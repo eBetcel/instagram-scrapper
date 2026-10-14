@@ -22,6 +22,7 @@ from agenda.models import Evento, EventoFonte, Job, Post
 from agenda.reconciliacao.aplicar import aplicar, campos_do_evento
 from agenda.reconciliacao.candidatos import buscar_candidatos
 from agenda.reconciliacao.decisao import Reconciliador, eventos_do_post
+from agenda.reconciliacao.fusao import deduplicar
 from agenda.reconciliacao.identidade import mesmo_evento
 from agenda.storage import Storage
 
@@ -121,6 +122,7 @@ def tratar_reconciliar_post(s: Session, job: Job, deps: Dependencias) -> None:
     eventos = agrupar_festivais(
         filtrar_validos(ExtracaoPost.model_validate(post.extracao).eventos, agora)
     )
+    tocados = []
     for e in eventos:
         candidatos = buscar_candidatos(s, e, agora=agora)
         par = par_forte(s, e, candidatos, post)
@@ -130,7 +132,8 @@ def tratar_reconciliar_post(s: Session, job: Job, deps: Dependencias) -> None:
             e, candidatos, post, exigir_candidato=par is not None
         )
         somar_uso(post, uso)
-        aplicar(s, e, decisao, candidatos, post)
+        tocados.append(aplicar(s, e, decisao, candidatos, post))
+    deduplicar(s, agora=agora, eventos=tocados)
     post.status = "reconciliado"
     post.erro_msg = None
     s.flush()
