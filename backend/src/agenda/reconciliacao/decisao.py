@@ -14,7 +14,7 @@ log = logging.getLogger(__name__)
 
 Campo = Literal[
     "titulo", "descricao", "inicio", "fim", "local_nome", "endereco", "cidade", "categoria",
-    "preco_texto", "gratuito", "preco_min", "preco_max", "link_ingresso", "artistas", "status",
+    "preco_texto", "gratuito", "preco_min", "preco_max", "link_ingresso", "artistas", "festival", "status",
 ]
 CAMPOS_PERMITIDOS: frozenset[str] = frozenset(get_args(Campo))
 
@@ -130,6 +130,7 @@ def _candidato_json(c: Evento, mesmo_post: bool) -> dict[str, Any]:
         "preco_max": num(c.preco_max),
         "link_ingresso": c.link_ingresso,
         "artistas": list(c.artistas or []),
+        "festival": c.festival,
         "status": c.status,
         "mesmo_post": mesmo_post,
     }

@@ -105,6 +105,12 @@ class Evento(Base):
             postgresql_ops={"local_nome": "gin_trgm_ops"},
         ),
         Index("ix_eventos_artistas_norm", "artistas_norm", postgresql_using="gin"),
+        Index(
+            "ix_eventos_festival_trgm",
+            "festival",
+            postgresql_using="gin",
+            postgresql_ops={"festival": "gin_trgm_ops"},
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -128,6 +134,7 @@ class Evento(Base):
     artistas_norm: Mapped[list[str]] = mapped_column(
         ARRAY(Text), server_default=text("'{}'"), default=list
     )
+    festival: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String, server_default="ativo", default="ativo")
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     atualizado_em: Mapped[datetime] = mapped_column(

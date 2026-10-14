@@ -39,6 +39,7 @@ class EventoExtraido(BaseModel):
     preco_max: float | None
     link_ingresso: str | None
     artistas: list[str]
+    festival: str | None
     status_indicado: StatusIndicado | None
     confianca: Confianca
 

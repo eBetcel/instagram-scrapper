@@ -209,7 +209,7 @@ def _evento_extraido(d: dict[str, Any]) -> EventoExtraido:
         "titulo": None, "descricao": None, "data_inicio": None, "hora_inicio": None,
         "data_fim": None, "hora_fim": None, "local_nome": None, "endereco": None, "cidade": None,
         "categoria": "outro", "preco_texto": None, "gratuito": None, "preco_min": None,
-        "preco_max": None, "link_ingresso": None, "artistas": [], "status_indicado": None,
+        "preco_max": None, "link_ingresso": None, "artistas": [], "festival": None, "status_indicado": None,
         "confianca": {"data_inicio": 1.0, "hora_inicio": 1.0, "local_nome": 1.0},
     }
     return EventoExtraido.model_validate({**base, **d})

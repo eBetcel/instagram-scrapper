@@ -33,7 +33,8 @@ __all__ = ["DecisaoInvalida", "aplicar", "campos_do_evento"]
 # Ordem estavel para aplicar/registrar revisoes.
 _ORDEM: tuple[Campo, ...] = (
     "titulo", "descricao", "inicio", "fim", "local_nome", "endereco", "cidade", "categoria",
-    "preco_texto", "gratuito", "preco_min", "preco_max", "link_ingresso", "artistas", "status",
+    "preco_texto", "gratuito", "preco_min", "preco_max", "link_ingresso", "artistas", "festival",
+    "status",
 )
 # Colunas derivadas, gravadas junto com o campo principal (sem revisao propria).
 _DERIVADAS = {"inicio": "hora_definida", "artistas": "artistas_norm"}
@@ -64,6 +65,7 @@ def campos_do_evento(e: EventoExtraido) -> dict[str, Any]:
         "link_ingresso": e.link_ingresso,
         "artistas": list(e.artistas),
         "artistas_norm": normalizar_artistas(e.artistas),
+        "festival": e.festival,
         "status": e.status_indicado or "ativo",
     }
 

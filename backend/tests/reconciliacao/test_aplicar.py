@@ -433,3 +433,17 @@ def test_novo_com_horarios_definidos_diferentes_continua_novo(session):
                 local_nome="Sede Dosol", hora_definida=True)
     noite = FESTIVAL.model_copy(update={"hora_inicio": time(21, 0)})
     assert aplicar(session, noite, _d("NOVO"), [ev], post(session)).id != ev.id
+
+
+# --- festival ------------------------------------------------------------------
+
+def test_campos_do_evento_mapeia_festival():
+    e = extraido(titulo="Show do Siba", data_inicio=date(2026, 11, 28), festival="Festival DoSol 2026")
+    assert campos_do_evento(e)["festival"] == "Festival DoSol 2026"
+
+
+def test_duplicado_preenche_festival_vazio(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO)
+    com_festival = E.model_copy(update={"festival": "Festival Jazz 2026"})
+    aplicar(session, com_festival, _d("DUPLICADO", ev.id), [ev], post(session))
+    assert ev.festival == "Festival Jazz 2026"

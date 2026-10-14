@@ -19,7 +19,7 @@ def ev(**kw) -> EventoExtraido:
         hora_inicio=None, data_fim=None, hora_fim=None, local_nome=None,
         endereco=None, cidade=None, categoria="show", preco_texto=None,
         gratuito=None, preco_min=None, preco_max=None, link_ingresso=None,
-        artistas=[], status_indicado=None,
+        artistas=[], festival=None, status_indicado=None,
         confianca=Confianca(data_inicio=1.0, hora_inicio=1.0, local_nome=1.0),
     )
     base.update(kw)

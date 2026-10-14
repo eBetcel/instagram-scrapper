@@ -41,6 +41,10 @@ de onde o artista é, não onde é o evento: não é cidade.
 - Datas no formato ISO (AAAA-MM-DD) e horas no formato HH:MM:SS, no fuso de \
 São Paulo. Resolva datas relativas ("sexta que vem", "amanhã") a partir da \
 data de publicação informada.
+- `festival` é o nome do festival ou evento maior de que este evento faz \
+parte ("Festival MADA 2026", "Festival DoSol 2026"), quando o post diz isso; \
+senão, null. Para o próprio festival (o post anuncia o festival, não uma \
+atração), `festival` é o nome dele também.
 - `gratuito` é true apenas se o post disser explicitamente que a entrada é \
 gratuita; preços em reais, como número.
 - `status_indicado` só é preenchido se o post disser que o evento foi \
