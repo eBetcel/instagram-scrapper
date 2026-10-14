@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs, urlparse
 
 from apoio import logar
-from sqlalchemy import func, select, update
+from sqlalchemy import select, update
 
 from agenda.api.seguranca import criar_convite
 from agenda.models import Convite, TokenLogin, Usuario

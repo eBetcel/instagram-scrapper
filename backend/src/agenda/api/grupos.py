@@ -1,16 +1,22 @@
 """Grupos (curadorias de @s) e seguidores."""
 
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
+from agenda.api.consultas import eventos_do_grupo, resumir
 from agenda.api.deps import deps_api, sessao_db, usuario_atual, usuario_opcional
 from agenda.api.esquemas import GrupoDetalhe, GrupoSaida, PerfilNoGrupo
 from agenda.models import Grupo, GrupoPerfil, GrupoSeguidor, Perfil, Usuario
+from agenda.extracao.regras import FUSO
 from agenda.jobs import reativar_ou_enfileirar
 from agenda.texto import normalizar_username, slugificar
+
+DIAS_PUBLICOS = timedelta(days=30)
 
 rotas = APIRouter(prefix="/api")
 
@@ -151,17 +157,20 @@ def criar(dados: GrupoEntrada, s: Session = Depends(sessao_db), u: Usuario = Dep
 
 @rotas.get("/grupos/{slug}")
 def detalhe(slug: str, s: Session = Depends(sessao_db),
-            u: Usuario | None = Depends(usuario_opcional)) -> GrupoDetalhe:
+            u: Usuario | None = Depends(usuario_opcional), deps=Depends(deps_api)) -> GrupoDetalhe:
     g = grupo_ou_404(s, slug)
     perfis = s.scalars(
         select(Perfil).join(GrupoPerfil, GrupoPerfil.perfil_id == Perfil.id)
         .where(GrupoPerfil.grupo_id == g.id).order_by(Perfil.username)
     )
     sigo = u is not None and s.get(GrupoSeguidor, (g.id, u.id)) is not None
+    agora = deps.relogio()
+    hoje = agora.astimezone(FUSO).date()
     return GrupoDetalhe(
         **_saidas(s, [g])[0].model_dump(),
         perfis=[PerfilNoGrupo(username=p.username, status=status_perfil(p)) for p in perfis],
-        eventos=[], sou_dono=u is not None and u.id == g.dono_id, sigo=sigo,
+        eventos=resumir(s, eventos_do_grupo(s, g.id, hoje, hoje + DIAS_PUBLICOS), agora),
+        sou_dono=u is not None and u.id == g.dono_id, sigo=sigo,
     )
 
 
