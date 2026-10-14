@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from agenda.extracao.regras import FUSO, normalizar_preco, para_fim, para_inicio
 from agenda.extracao.schema import EventoExtraido
 from agenda.models import Evento, EventoFonte, Post, RevisaoEvento
-from agenda.reconciliacao.candidatos import normalizar_artistas
+from agenda.reconciliacao.candidatos import normalizar_artistas, unir_artistas
 from agenda.reconciliacao.decisao import (
     CAMPOS_PERMITIDOS,
     Campo,
@@ -159,6 +159,19 @@ def _so_preenche(ev: Evento, mudancas: list[str], novo: dict[str, Any], status: 
     )
 
 
+def _acrescentar_artistas_de_festival(
+    s: Session, ev: Evento, novo: dict[str, Any], post: Post, motivo: str | None
+) -> None:
+    """Num evento de festival, cada post cita só parte das atrações: os artistas se
+    somam em vez de serem substituídos."""
+    if not ev.festival:
+        return
+    artistas = unir_artistas(list(ev.artistas or []), novo["artistas"])
+    if artistas != list(ev.artistas or []):
+        uniao = {"artistas": artistas, "artistas_norm": normalizar_artistas(artistas)}
+        _alterar(s, ev, "artistas", uniao, post, motivo)
+
+
 def _ja_criado_pelo_post(
     s: Session, candidatos: list[Evento], post: Post, inicio: datetime
 ) -> Evento | None:
@@ -236,14 +249,18 @@ def aplicar(
         assert alvo is not None
         if decisao == "DUPLICADO":
             _duplicado(s, alvo, atualizacao, post, motivo)
+            _acrescentar_artistas_de_festival(s, alvo, novo, post, motivo)
             return alvo
 
         campos = set(d.mudancas)
+        if alvo.festival:
+            campos.discard("artistas")  # num festival, a lista se soma; ver abaixo
         if e.status_indicado is not None and e.status_indicado != alvo.status:
             campos.add("status")
         for campo in _ORDEM:
             if campo in campos:
                 _alterar(s, alvo, campo, atualizacao, post, motivo)
+        _acrescentar_artistas_de_festival(s, alvo, novo, post, motivo)
         s.flush()
         _vincular(s, alvo, post, "atualizacao")
         return alvo

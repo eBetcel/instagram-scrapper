@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from agenda.extracao.regras import FUSO
 from agenda.models import Evento, EventoFonte, RevisaoEvento
 from agenda.reconciliacao.aplicar import _ORDEM, _alterar, _falta
-from agenda.reconciliacao.candidatos import JANELA_PASSADO, normalizar_artistas
+from agenda.reconciliacao.candidatos import JANELA_PASSADO, normalizar_artistas, unir_artistas
 from agenda.reconciliacao.identidade import mesmo_evento
 
 log = logging.getLogger(__name__)
@@ -35,13 +35,7 @@ def fundir(s: Session, manter: Evento, remover: Evento, motivo: str) -> None:
                   .values(evento_id=manter.id))
 
         outro = _campos(remover)
-        artistas = list(manter.artistas or [])
-        vistos = set(normalizar_artistas(artistas))
-        for a in remover.artistas or []:
-            norm = normalizar_artistas([a])
-            if norm and norm[0] not in vistos:
-                artistas.append(a)
-                vistos.add(norm[0])
+        artistas = unir_artistas(list(manter.artistas or []), list(remover.artistas or []))
         outro["artistas"] = artistas
         outro["artistas_norm"] = normalizar_artistas(artistas)
         for campo in _ORDEM:

@@ -28,6 +28,18 @@ def normalizar_artistas(nomes: list[str]) -> list[str]:
     return list(vistos)
 
 
+def unir_artistas(atuais: list[str], novos: list[str]) -> list[str]:
+    """`atuais` mais os `novos` que ainda não estão lá (comparação normalizada)."""
+    uniao = list(atuais)
+    vistos = set(normalizar_artistas(uniao))
+    for a in novos:
+        norm = normalizar_artistas([a])
+        if norm and norm[0] not in vistos:
+            uniao.append(a)
+            vistos.add(norm[0])
+    return uniao
+
+
 def buscar_candidatos(
     s: Session,
     e: EventoExtraido,

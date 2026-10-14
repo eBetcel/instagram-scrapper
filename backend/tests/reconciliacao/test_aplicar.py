@@ -392,3 +392,31 @@ def test_duplicado_preenche_festival_vazio(session):
     com_festival = E.model_copy(update={"festival": "Festival Jazz 2026"})
     aplicar(session, com_festival, _d("DUPLICADO", ev.id), [ev], post(session))
     assert ev.festival == "Festival Jazz 2026"
+
+
+def _festival_dosol(s):
+    return evento(s, "Festival DoSol 2026", INICIO, festival="Festival DoSol 2026",
+                  categoria="festival", artistas=["Mercenárias", "Vanguart"])
+
+
+def test_atualizacao_de_festival_une_artistas(session):
+    ev = _festival_dosol(session)
+    siba = E.model_copy(update={"titulo": "Festival DoSol 2026", "festival": "Festival DoSol 2026",
+                                "artistas": ["Siba", "vanguart"]})
+    aplicar(session, siba, _d("ATUALIZACAO", ev.id, ["artistas"]), [ev], post(session))
+    assert ev.artistas == ["Mercenárias", "Vanguart", "Siba"]
+    assert ev.artistas_norm == ["mercenarias", "vanguart", "siba"]
+
+
+def test_duplicado_de_festival_acrescenta_artistas_novos(session):
+    ev = _festival_dosol(session)
+    siba = E.model_copy(update={"titulo": "Festival DoSol 2026", "festival": "Festival DoSol 2026",
+                                "artistas": ["Siba"]})
+    aplicar(session, siba, _d("DUPLICADO", ev.id), [ev], post(session))
+    assert ev.artistas == ["Mercenárias", "Vanguart", "Siba"]
+
+
+def test_atualizacao_fora_de_festival_continua_substituindo_artistas(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO, artistas=["Ciclano"])
+    aplicar(session, E, _d("ATUALIZACAO", ev.id, ["artistas"]), [ev], post(session))
+    assert ev.artistas == ["Fulano", "Beltrana"]
