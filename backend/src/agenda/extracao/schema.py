@@ -1,7 +1,7 @@
 from datetime import date, time
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 Categoria = Literal[
     "show", "festa", "exposicao", "teatro", "cinema", "oficina", "festival", "outro"
@@ -41,6 +41,12 @@ class EventoExtraido(BaseModel):
     artistas: list[str]
     status_indicado: StatusIndicado | None
     confianca: Confianca
+
+    @field_validator("hora_inicio", "hora_fim")
+    @classmethod
+    def _hora_local(cls, v: time | None) -> time | None:
+        # Horas de flyer são sempre locais; o modelo às vezes anexa "Z" ou "-03:00".
+        return v.replace(tzinfo=None) if v is not None else None
 
 
 class ExtracaoPost(BaseModel):

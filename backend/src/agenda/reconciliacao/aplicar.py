@@ -133,6 +133,29 @@ def _so_perde_horario(ev: Evento, novo: dict[str, Any]) -> bool:
     )
 
 
+def _so_acrescenta_horario(ev: Evento, novo: dict[str, Any]) -> bool:
+    """O evento tem só a data e o post traz a hora no mesmo dia: é dado que faltava."""
+    return (
+        not ev.hora_definida
+        and novo["hora_definida"]
+        and ev.inicio.astimezone(FUSO).date() == novo["inicio"].astimezone(FUSO).date()
+    )
+
+
+def _falta(ev: Evento, campo: str, novo: dict[str, Any]) -> bool:
+    if campo == "inicio":
+        return _so_acrescenta_horario(ev, novo)
+    return _vazio(getattr(ev, campo))
+
+
+def _so_preenche(ev: Evento, mudancas: list[str], novo: dict[str, Any], status: str | None) -> bool:
+    """ATUALIZACAO que só preenche o que faltava no evento (ou lista campos que o post
+    nem informa, que `_alterar` ignora) é, na verdade, DUPLICADO."""
+    return (status is None or status == ev.status) and all(
+        _falta(ev, c, novo) or _vazio(novo[c]) for c in mudancas
+    )
+
+
 def _ja_criado_pelo_post(
     s: Session, candidatos: list[Evento], post: Post, inicio: datetime
 ) -> Evento | None:
@@ -155,7 +178,7 @@ def _duplicado(
     s: Session, ev: Evento, novo: dict[str, Any], post: Post, motivo: str | None
 ) -> None:
     for campo in _ORDEM:
-        if _vazio(getattr(ev, campo)):
+        if _falta(ev, campo, novo):
             _alterar(s, ev, campo, novo, post, motivo)
     s.flush()
     _vincular(s, ev, post, "duplicado")
@@ -190,6 +213,10 @@ def aplicar(
     # Em DUPLICADO/ATUALIZACAO, sem status_indicado o post nao informa status:
     # None (ignorado), nunca "ativo" (o default vale so para criar um evento).
     atualizacao = {**novo, "status": e.status_indicado}
+    if decisao == "ATUALIZACAO" and alvo is not None and _so_preenche(
+        alvo, d.mudancas, novo, e.status_indicado
+    ):
+        decisao = "DUPLICADO"
 
     with s.begin_nested():
         if decisao == "NOVO":

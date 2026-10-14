@@ -230,7 +230,8 @@ def test_atualizacao_com_valor_nulo_nao_apaga(session):
     sem = E.model_copy(update={"link_ingresso": None, "endereco": None})
     aplicar(session, sem, _d("ATUALIZACAO", ev.id, ["link_ingresso", "endereco"]), [ev], post(session))
     assert ev.link_ingresso == "https://a" and ev.endereco == "Rua A"
-    assert _revisoes(session, ev) == []
+    # Sem nada a mudar, a ATUALIZACAO vira DUPLICADO: preenche só os campos vazios.
+    assert not {r.campo for r in _revisoes(session, ev)} & {"link_ingresso", "endereco"}
 
 
 def test_atualizacao_campo_igual_nao_gera_revisao(session):
@@ -337,3 +338,43 @@ def test_atualizacao_sem_hora_na_mesma_data_nao_apaga_horario(session):
     assert ev.hora_definida is True
     assert ev.status == "esgotado"
     assert {r.campo for r in _revisoes(session, ev)} == {"status"}
+
+
+# --- ATUALIZACAO que só preenche vazios vira DUPLICADO --------------------------
+
+def test_atualizacao_que_so_preenche_vazios_e_aplicada_como_duplicado(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO, local_nome="Praça Central")
+    aplicar(session, E, _d("ATUALIZACAO", ev.id, ["cidade", "link_ingresso"]), [ev], post(session))
+    assert ev.cidade == "Belo Horizonte" and ev.link_ingresso == "https://ingressos.example/jazz"
+    assert [f.decisao for f in _fontes(session, ev)] == ["duplicado"]
+
+
+def test_atualizacao_que_so_acrescenta_hora_na_mesma_data_e_duplicado(session):
+    sem_hora = datetime(2026, 11, 20, 0, 0, tzinfo=FUSO)
+    ev = evento(session, "Festival Jazz na Praça", sem_hora, hora_definida=False)
+    aplicar(session, E, _d("ATUALIZACAO", ev.id, ["inicio"]), [ev], post(session))
+    assert ev.inicio == INICIO and ev.hora_definida
+    assert [f.decisao for f in _fontes(session, ev)] == ["duplicado"]
+
+
+def test_atualizacao_que_muda_valor_preenchido_continua_atualizacao(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO, cidade="Contagem")
+    aplicar(session, E, _d("ATUALIZACAO", ev.id, ["cidade", "link_ingresso"]), [ev], post(session))
+    assert ev.cidade == "Belo Horizonte"
+    assert [f.decisao for f in _fontes(session, ev)] == ["atualizacao"]
+
+
+def test_atualizacao_com_status_indicado_continua_atualizacao(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO)
+    esgotado = E.model_copy(update={"status_indicado": "esgotado"})
+    aplicar(session, esgotado, _d("ATUALIZACAO", ev.id, ["cidade"]), [ev], post(session))
+    assert ev.status == "esgotado"
+    assert [f.decisao for f in _fontes(session, ev)] == ["atualizacao"]
+
+
+def test_atualizacao_listando_campo_que_o_post_nao_informa_e_duplicado(session):
+    ev = evento(session, "Festival Jazz na Praça", INICIO, cidade="Belo Horizonte")
+    sem_cidade = E.model_copy(update={"cidade": None})
+    aplicar(session, sem_cidade, _d("ATUALIZACAO", ev.id, ["cidade", "link_ingresso"]), [ev], post(session))
+    assert ev.cidade == "Belo Horizonte" and ev.link_ingresso == "https://ingressos.example/jazz"
+    assert [f.decisao for f in _fontes(session, ev)] == ["duplicado"]

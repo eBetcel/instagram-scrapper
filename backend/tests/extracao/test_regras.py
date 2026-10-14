@@ -141,3 +141,12 @@ def test_schema_estrito_para_openai():
         d = defs[nome]
         assert set(d["required"]) == set(d["properties"])
         assert d["additionalProperties"] is False
+
+
+def test_hora_com_fuso_vira_hora_local_ingenua():
+    # O modelo às vezes devolve "17:00:00Z" ou "19:00:00-03:00" para o "17H" do flyer.
+    e = EventoExtraido.model_validate(
+        {**ev().model_dump(mode="json"), "hora_inicio": "17:00:00Z", "hora_fim": "23:00:00-03:00"}
+    )
+    assert e.hora_inicio == time(17, 0) and e.hora_inicio.tzinfo is None
+    assert e.hora_fim == time(23, 0) and e.hora_fim.tzinfo is None

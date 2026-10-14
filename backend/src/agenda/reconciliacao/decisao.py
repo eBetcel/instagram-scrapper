@@ -29,22 +29,33 @@ de publicação do post e uma lista de candidatos já cadastrados, cada um com s
 
 Decisões:
 - NOVO: nenhum candidato é o mesmo evento. Use `evento_id` null.
-- DUPLICADO: um candidato é o mesmo evento e o post não muda nada nele (pode \
-apenas trazer dados que faltavam). `evento_id` é o `id` desse candidato.
-- ATUALIZACAO: um candidato é o mesmo evento e o post muda algo nele (nova \
-data, novo local, preço, adiamento, cancelamento, ingressos esgotados etc.). \
-`evento_id` é o `id` desse candidato e `mudancas` lista os nomes dos campos \
-alterados; os novos valores são os do evento extraído.
+- DUPLICADO: um candidato é o mesmo evento e o post não muda nada nele. Se o \
+post só traz dados que faltavam no candidato (hora, cidade, preço, link etc.), \
+também é DUPLICADO. `evento_id` é o `id` desse candidato.
+- ATUALIZACAO: um candidato é o mesmo evento e o post muda um valor que o \
+candidato já tinha preenchido (nova data, novo local, preço, adiamento, \
+cancelamento, ingressos esgotados etc.). `evento_id` é o `id` desse candidato \
+e `mudancas` lista os nomes dos campos alterados; os novos valores são os do \
+evento extraído.
 
 Regras:
 - `evento_id` deve ser, obrigatoriamente, o `id` de um dos candidatos enviados.
+- A data de publicação do post não é a data do evento: compare sempre a data \
+de início do evento extraído com a do candidato.
+- Campo null, vazio ou ausente (no evento extraído ou no candidato) é \
+informação que falta, não divergência. Cidade diferente só pesa quando as duas \
+estão preenchidas.
+- Mesmo título ou mesmos artistas, mesma data de início e mesmo local (nomes \
+de local parecidos, como "Sede Dosol" e "Sede Cultural Dosol", contam como o \
+mesmo) é o mesmo evento, ainda que um lado não tenha hora ou cidade.
 - Mesmo título com local ou data-base diferentes, e sem nenhuma pista de \
 remarcação (adiamento, nova data, mudança de local), NÃO é duplicado: é um \
 evento NOVO (por exemplo, uma turnê ou uma programação que se repete).
 - Dois shows com artistas diferentes no mesmo local e no mesmo dia são eventos \
 distintos: NÃO é duplicado.
 - Em `mudancas`, inclua só campos cujo valor no evento extraído é diferente do \
-valor atual do candidato; nunca inclua campos que o post não informa. Em \
+valor atual, já preenchido, do candidato; nunca inclua campos que o post não \
+informa nem campos que estavam vazios no candidato. Em \
 DUPLICADO e NOVO, use a lista vazia.
 - Um candidato com `"mesmo_post": true` já veio deste mesmo post (por \
 exemplo, outra data de uma agenda mensal ou de um flyer com vários eventos). \

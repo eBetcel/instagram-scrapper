@@ -25,14 +25,17 @@ de perfis de casas de show, teatros, galerias e produtores no Brasil.
 
 Regras:
 - Um post pode divulgar vários eventos (por exemplo, uma programação mensal): \
-devolva um item em `eventos` para cada evento. Se o post não divulga nenhum \
-evento, devolva a lista vazia.
+devolva um item em `eventos` para cada evento. Isso vale também para listas \
+de agenda na legenda ("AGENDA ...", uma linha por data), mesmo que o post \
+destaque só um deles: cada data da lista é um evento. Se o post não divulga \
+nenhum evento, devolva a lista vazia.
 - Não invente o que não está no post. Se uma informação não aparece na legenda \
 nem nas imagens, use null (ou lista vazia em `artistas`).
 - `categoria` deve ser exatamente uma de: show, festa, exposicao, teatro, \
 cinema, oficina, festival, outro. Na dúvida, use "outro".
-- `cidade` é obrigatória sempre que puder ser inferida do post (endereço, \
-local conhecido, hashtags ou perfil); caso contrário, null.
+- `cidade` só quando o nome da cidade aparece escrito no post (legenda, \
+imagem, endereço ou hashtag como #natalrn). Não deduza a cidade pelo nome do \
+local, do bairro ou do perfil: sem o nome escrito, use null.
 - Datas no formato ISO (AAAA-MM-DD) e horas no formato HH:MM:SS, no fuso de \
 São Paulo. Resolva datas relativas ("sexta que vem", "amanhã") a partir da \
 data de publicação informada.
