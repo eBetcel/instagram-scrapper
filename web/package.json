@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "TZ=UTC vitest run"
+    "test": "TZ=UTC vitest run",
+    "e2e": "bash e2e/preparar.sh && playwright test"
   },
   "dependencies": {
     "next": "16.4.0",
@@ -15,6 +16,7 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.0",
     "@tailwindcss/turbopack": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

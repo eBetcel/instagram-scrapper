@@ -1,36 +1,37 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Agenda — front web (Next.js)
 
-## Getting Started
+Páginas do piloto: `/entrar`, `/` (agenda), `/evento/[id]`, `/grupos`, `/g/[slug]`
+(pública) e `/conta`. O navegador só fala com esta origem: `/api/*` é repassado para a
+api (`next.config.ts`), e o cookie de sessão fica aqui também.
 
-First, run the development server:
+## Rodar
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Com o Postgres, o SeaweedFS e o Mailpit do `docker-compose.yml` da raiz no ar e a api
+rodando (`cd ../backend && uv run agenda api --porta 8010`):
+
+```sh
+npm install
+cp .env.example .env.local   # API_URL_INTERNA=http://localhost:8010
+npm run dev                  # http://localhost:3000
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+O link de login chega no Mailpit (<http://localhost:8025>). `APP_URL` da api deve ser a
+origem deste front (padrão `http://localhost:3000`).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+> Os rewrites para a api são fixados no build: um `next build` usa o `API_URL_INTERNA`
+> do momento do build.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Testes
 
-## Learn More
+```sh
+npm test        # Vitest (datas, formatação, clientes da api), com TZ=UTC
+npm run lint
+npm run e2e     # Playwright: recria o banco agenda_e2e, sobe api (8111) e front (3101)
+```
 
-To learn more about Next.js, take a look at the following resources:
+O smoke (`e2e/piloto.spec.ts`) percorre o piloto inteiro: convite e login pelo Mailpit,
+criar grupo, adicionar @s, agenda, evento, página pública vista sem login, outra pessoa
+seguindo o grupo e saindo.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Next.js 16 com `cacheComponents`: toda leitura de cookie ou de `searchParams` fica dentro
+de um `<Suspense>` na própria página (nenhum layout lê a sessão).
