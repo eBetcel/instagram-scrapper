@@ -3,3 +3,7 @@ __pycache__/
 *.egg-info/
 .env
 .pytest_cache/
+
+# Casos reais do golden set: posts de terceiros, ficam fora do repositório público
+backend/golden/casos/*
+!backend/golden/casos/.gitkeep

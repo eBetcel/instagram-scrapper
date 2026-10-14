@@ -3,6 +3,11 @@
 Casos reais anotados à mão para medir a qualidade da extração (Etapa B) e da
 reconciliação (Etapa C). Meta: cerca de 50 casos em `backend/golden/casos/`.
 
+Os casos são posts reais de perfis de terceiros (legenda e flyers), por isso
+`backend/golden/casos/*` fica fora do git (ver `.gitignore`): cada pessoa mantém os
+seus localmente. Para montar um caso, exporte o post do banco (legenda e imagens do
+storage) para uma pasta com o layout abaixo e anote o `esperado.json`.
+
 ## Rodar
 
     cd backend
