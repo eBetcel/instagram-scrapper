@@ -74,7 +74,7 @@ e-mail, no cookie, na saída da CLI).
   inválido";
 - e-mail novo com convite válido e sem `nome` → 422 "Informe seu nome";
 - e-mail novo com convite válido e `nome` → cria o usuário, decrementa `usos_restantes` (na mesma
-  transação, com `SELECT ... FOR UPDATE`), envia o link → 202;
+  transação, com um `UPDATE ... WHERE usos_restantes > 0` atômico), envia o link → 202;
 - limite: no máximo 1 link por minuto e 5 por hora por e-mail (contando `tokens_login`);
   acima disso → 429 "Aguarde para pedir outro link".
 
