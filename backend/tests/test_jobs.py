@@ -196,3 +196,10 @@ def test_reativar_ou_enfileirar_cobre_novo_reativado_existente(session):
     job.status = "concluido"
     session.flush()
     assert reativar_ou_enfileirar(session, "t", {"a": 1}, "k1") == "novo"
+
+
+def test_enfileirar_com_chave_sobrevive_ao_prepared_statement(session):
+    # O psycopg prepara o INSERT após 5 execuções e o Postgres passa ao plano genérico
+    # após mais 5; com o predicado do ON CONFLICT parametrizado, a 11ª falhava.
+    for i in range(15):
+        assert enfileirar(session, "t_prep", {}, chave=f"k{i}") is not None

@@ -9,7 +9,7 @@ o início da execução, e `recuperar_travados` devolve à fila os que passaram 
 from datetime import datetime, timedelta
 from typing import Literal
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -35,7 +35,9 @@ def enfileirar(
     if chave is not None:
         stmt = stmt.on_conflict_do_nothing(
             index_elements=[Job.tipo, Job.chave],
-            index_where=(Job.chave.is_not(None)) & (Job.status != "concluido"),
+            # Literal, igual ao do índice: com parâmetro, o plano genérico do statement
+            # preparado não consegue inferir o índice parcial.
+            index_where=text("chave IS NOT NULL AND status <> 'concluido'"),
         )
     return s.scalars(
         stmt.returning(Job), execution_options={"populate_existing": True}
