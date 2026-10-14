@@ -1,5 +1,5 @@
 import { FUSO } from "./datas";
-import type { Evento } from "./tipos";
+import type { Evento, PerfilNoGrupo } from "./tipos";
 
 const horaMinuto = new Intl.DateTimeFormat("pt-BR", { timeZone: FUSO, hour: "2-digit", minute: "2-digit" });
 const inteiro = new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 });
@@ -39,4 +39,9 @@ export function selos(e: Evento): string[] {
 export const CATEGORIAS: Record<Evento["categoria"], string> = {
   show: "Show", festa: "Festa", exposicao: "Exposição", teatro: "Teatro",
   cinema: "Cinema", oficina: "Oficina", festival: "Festival", outro: "Outro",
+};
+
+/** Rótulo do status de um @ no grupo; "ativo" não mostra nada. */
+export const STATUS_PERFIL: Record<PerfilNoGrupo["status"], string> = {
+  ativo: "", coletando: "coletando…", privado: "privado", inexistente: "não encontrado",
 };
