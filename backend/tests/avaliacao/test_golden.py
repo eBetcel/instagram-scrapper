@@ -112,3 +112,15 @@ def test_reconciliacao_novo_esperado_ignora_evento_id(tmp_path):
     assert rel.total_evento_id == 0 and rel.acertos_evento_id == 0
     assert rel.erros == []
     assert "evento_id  0/0" in rel.formatar()
+
+
+def test_relatorio_extracao_pontua_atracoes_agrupadas_no_festival():
+    casos = [c for c in carregar_casos(GOLDEN) if c.nome == "c1_show"]
+    # Duas atrações do mesmo festival no dia esperado viram um evento "Rock na Casa X".
+    ext = ExtratorPorUsername({"Rock": ExtracaoPost(eventos=[
+        _ev(titulo="Banda A", data_inicio=date(2026, 10, 10), festival="Rock na Casa X"),
+        _ev(titulo="Banda B", data_inicio=date(2026, 10, 10), festival="Rock na Casa X"),
+    ])})
+    rel = avaliar_extracao(casos, ext)
+    assert rel.eventos_extraidos == 1
+    assert rel.acuracia["titulo"] == 1.0

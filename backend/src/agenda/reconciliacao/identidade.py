@@ -1,24 +1,16 @@
 """Identidade determinística de eventos: decide, sem o modelo, se dois eventos são o mesmo."""
 
 import re
-import unicodedata
 from difflib import SequenceMatcher
 
 from agenda.extracao.regras import FUSO
 from agenda.models import Evento
+from agenda.texto import normalizar
 
 PALAVRAS_VAZIAS = frozenset(
     "a o as os de da do das dos e em no na nos nas com para pra por".split()
 )
 LIMIAR_DIGITACAO = 0.8
-
-
-def normalizar(texto: str | None) -> str:
-    """Minúsculas, sem acento, pontuação vira espaço, espaços colapsados."""
-    sem_acento = "".join(
-        c for c in unicodedata.normalize("NFKD", texto or "") if not unicodedata.combining(c)
-    )
-    return " ".join(re.sub(r"[^\w]+", " ", sem_acento.lower()).split())
 
 
 def tokens(texto: str | None) -> set[str]:

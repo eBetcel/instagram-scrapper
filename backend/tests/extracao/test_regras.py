@@ -2,6 +2,7 @@ from datetime import date, datetime, time, timedelta, timezone
 
 from agenda.extracao.regras import (
     FUSO,
+    agrupar_festivais,
     filtrar_validos,
     instrucoes_datas,
     normalizar_preco,
@@ -150,3 +151,85 @@ def test_hora_com_fuso_vira_hora_local_ingenua():
     )
     assert e.hora_inicio == time(17, 0) and e.hora_inicio.tzinfo is None
     assert e.hora_fim == time(23, 0) and e.hora_fim.tzinfo is None
+
+
+# --- agrupar_festivais ---------------------------------------------------------
+
+MADA = "Festival MADA 2026"
+D16, D17 = date(2026, 10, 16), date(2026, 10, 17)
+
+
+def test_agrupa_atracoes_do_festival_por_dia():
+    eventos = [
+        ev(titulo="Show do Zeca", data_inicio=D16, festival=MADA, artistas=["Zeca Pagodinho"]),
+        ev(titulo="Show do Emicida", data_inicio=D17, festival=MADA, artistas=["Emicida"]),
+        ev(titulo="Baile com Belisa", data_inicio=D16, festival=MADA, artistas=["Belisa", "zeca pagodinho"]),
+    ]
+    dia16, dia17 = agrupar_festivais(eventos)
+    assert (dia16.titulo, dia16.data_inicio, dia16.festival, dia16.categoria) == (MADA, D16, MADA, "festival")
+    assert dia16.artistas == ["Zeca Pagodinho", "Belisa"]
+    assert (dia17.titulo, dia17.data_inicio, dia17.artistas) == (MADA, D17, ["Emicida"])
+    assert dia16.data_fim is None
+
+
+def test_agrupa_local_igual_mantem_e_divergente_vira_null():
+    iguais = agrupar_festivais([
+        ev(data_inicio=D16, festival=MADA, local_nome="Arena das Dunas", cidade="Natal"),
+        ev(data_inicio=D16, festival=MADA, local_nome="arena das dunas", cidade=None),
+    ])
+    assert (iguais[0].local_nome, iguais[0].cidade) == ("Arena das Dunas", "Natal")
+    divergentes = agrupar_festivais([
+        ev(data_inicio=D16, festival=MADA, local_nome="Palco A", cidade="Natal"),
+        ev(data_inicio=D16, festival=MADA, local_nome="Palco B", cidade="Macaíba"),
+    ])
+    assert (divergentes[0].local_nome, divergentes[0].cidade) == (None, None)
+
+
+def test_agrupa_hora_mais_cedo_e_descricao_por_atracao():
+    [g] = agrupar_festivais([
+        ev(titulo="Show do Siba", data_inicio=D16, hora_inicio=time(21, 0), festival=MADA, local_nome="Palco Rua Chile"),
+        ev(titulo="Vanguart", data_inicio=D16, hora_inicio=time(16, 0), hora_fim=time(17, 0), festival=MADA),
+    ])
+    assert (g.hora_inicio, g.hora_fim) == (time(16, 0), time(17, 0))
+    assert "Show do Siba" in g.descricao and "Palco Rua Chile" in g.descricao and "Vanguart" in g.descricao
+
+
+def test_agrupa_status_esgotado_se_algum_e_cancelado_so_se_todos():
+    [g] = agrupar_festivais([
+        ev(data_inicio=D16, festival=MADA, status_indicado="esgotado"),
+        ev(data_inicio=D16, festival=MADA, status_indicado="cancelado"),
+    ])
+    assert g.status_indicado == "esgotado"
+    [g] = agrupar_festivais([
+        ev(data_inicio=D16, festival=MADA, status_indicado="cancelado"),
+        ev(data_inicio=D16, festival=MADA),
+    ])
+    assert g.status_indicado is None
+    [g] = agrupar_festivais([ev(data_inicio=D16, festival=MADA, status_indicado="adiado")] * 2)
+    assert g.status_indicado == "adiado"
+
+
+def test_agrupa_preco_e_confianca():
+    [g] = agrupar_festivais([
+        ev(data_inicio=D16, festival=MADA, preco_min=50.0, preco_max=80.0, gratuito=False,
+           confianca=Confianca(data_inicio=0.9, hora_inicio=0.2, local_nome=1.0)),
+        ev(data_inicio=D16, festival=MADA, preco_min=30.0, preco_max=60.0, link_ingresso="https://x",
+           confianca=Confianca(data_inicio=0.5, hora_inicio=0.8, local_nome=0.7)),
+    ])
+    assert (g.preco_min, g.preco_max, g.gratuito, g.link_ingresso) == (30.0, 80.0, False, "https://x")
+    assert g.confianca == Confianca(data_inicio=0.5, hora_inicio=0.2, local_nome=0.7)
+
+
+def test_evento_sem_festival_passa_intacto():
+    avulso = ev(titulo="Jáder (PE)", data_inicio=D16)
+    atracao = ev(titulo="Show do Zeca", data_inicio=D16, festival=MADA)
+    resultado = agrupar_festivais([avulso, atracao])
+    assert resultado[0] == avulso
+    assert resultado[1].titulo == MADA
+
+
+def test_nome_do_festival_normalizado_agrupa():
+    assert len(agrupar_festivais([
+        ev(data_inicio=D16, festival="Festival MADA 2026"),
+        ev(data_inicio=D16, festival="festival mada 2026"),
+    ])) == 1

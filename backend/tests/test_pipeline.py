@@ -495,3 +495,29 @@ def test_tipo_de_job_desconhecido_falha_sem_retentativa(fabrica):
         job = s.scalars(select(Job)).one()
     assert (job.status, job.tentativas) == ("erro", 1)
     assert "tipo_inexistente" in job.erro_msg
+
+
+# --- festivais -----------------------------------------------------------------
+
+
+def test_atracoes_do_festival_viram_um_evento_por_dia(fabrica):
+    criar_perfis(fabrica, "mada")
+    lineup = [
+        show("Show do Zeca", dias=3, festival="Festival MADA 2026", artistas=["Zeca Pagodinho"]),
+        show("Baile com Belisa", dias=3, festival="Festival MADA 2026", artistas=["Belisa"]),
+        show("Show do Emicida", dias=4, festival="Festival MADA 2026", artistas=["Emicida"]),
+    ]
+    d = deps(
+        coletor=FakeColetor({"mada": [postado("M1")]}),
+        extrator=FakeExtrator({"mada": ExtracaoPost(eventos=lineup)}),
+        reconciliador=FakeReconciliador([NOVO, NOVO]),
+    )
+
+    rodar(fabrica, d)
+
+    eventos = sorted(os_eventos(fabrica), key=lambda e: e.inicio)
+    assert [(e.titulo, e.festival, e.categoria) for e in eventos] == [
+        ("Festival MADA 2026", "Festival MADA 2026", "festival")
+    ] * 2
+    assert eventos[0].artistas == ["Zeca Pagodinho", "Belisa"]
+    assert eventos[1].artistas == ["Emicida"]

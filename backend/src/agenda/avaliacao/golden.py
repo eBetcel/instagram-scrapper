@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from agenda.extracao.extrator import Extrator, Uso
+from agenda.extracao.regras import agrupar_festivais
 from agenda.extracao.schema import EventoExtraido
 from agenda.models import Evento, Perfil, Post
 from agenda.reconciliacao.candidatos import normalizar_artistas
@@ -149,7 +150,7 @@ def avaliar_extracao(casos: list[CasoGolden], extrator: Extrator) -> RelatorioEx
             caso.legenda, [p.read_bytes() for p in caso.imagens], caso.username, caso.publicado_em
         )
         rel.uso_total = _somar(rel.uso_total, res.uso)
-        extraidos = res.extracao.eventos
+        extraidos = agrupar_festivais(res.extracao.eventos)
         rel.eventos_esperados += len(caso.eventos)
         rel.eventos_extraidos += len(extraidos)
         rel.por_caso.append((caso.nome, len(caso.eventos), len(extraidos)))

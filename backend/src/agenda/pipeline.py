@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from agenda.coleta.base import Coletor
 from agenda.coleta.servico import baixar_url, coletar_perfil
 from agenda.extracao.extrator import Extrator, Uso
-from agenda.extracao.regras import filtrar_validos
+from agenda.extracao.regras import agrupar_festivais, filtrar_validos
 from agenda.extracao.schema import ExtracaoPost
 from agenda.jobs import enfileirar
 from agenda.models import Job, Post
@@ -97,7 +97,9 @@ def tratar_reconciliar_post(s: Session, job: Job, deps: Dependencias) -> None:
     if post.status != "extraido" or post.extracao is None:
         raise ValueError(f"post {post.id} com status {post.status!r} não pode ser reconciliado")
     agora = deps.relogio()
-    eventos = filtrar_validos(ExtracaoPost.model_validate(post.extracao).eventos, agora)
+    eventos = agrupar_festivais(
+        filtrar_validos(ExtracaoPost.model_validate(post.extracao).eventos, agora)
+    )
     for e in eventos:
         candidatos = buscar_candidatos(s, e, agora=agora)
         decisao, uso = deps.reconciliador.decidir(e, candidatos, post)
