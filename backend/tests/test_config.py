@@ -1,3 +1,4 @@
+from pathlib import Path
 from agenda.config import get_settings
 
 
@@ -15,7 +16,7 @@ def test_settings_le_variaveis_de_ambiente(monkeypatch):
 def test_alembic_so_precisa_de_database_url(engine, monkeypatch, tmp_path):
     from alembic import command
     from alembic.config import Config
-    from conftest import BACKEND
+    BACKEND = Path(__file__).resolve().parents[1]
 
     for var in ("OPENAI_MODELO_EXTRACAO", "OPENAI_MODELO_RECONCILIACAO", "OPENAI_API_KEY"):
         monkeypatch.delenv(var, raising=False)

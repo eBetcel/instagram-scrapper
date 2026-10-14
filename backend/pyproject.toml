@@ -14,10 +14,17 @@ dependencies = [
   "pillow",
   "typer",
   "cryptography",
+  "fastapi>=0.143.0",
+  "uvicorn[standard]>=0.54.0",
+  "email-validator>=2.3.0",
 ]
 
 [dependency-groups]
-dev = ["pytest", "testcontainers[postgres]"]
+dev = [
+    "httpx>=0.28.1",
+    "pytest",
+    "testcontainers[postgres]",
+]
 
 [project.scripts]
 agenda = "agenda.cli:app"

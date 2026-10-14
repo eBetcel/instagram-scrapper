@@ -25,6 +25,13 @@ services:
       - seaweedfsdata:/data
       - ./seaweedfs/s3.json:/etc/seaweedfs/s3.json:ro
 
+  # SMTP de desenvolvimento: os e-mails de login aparecem em http://localhost:8025
+  mailpit:
+    image: axllent/mailpit:v1.27
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
 volumes:
   pgdata:
   seaweedfsdata:

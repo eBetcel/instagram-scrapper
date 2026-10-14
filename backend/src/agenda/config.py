@@ -38,6 +38,33 @@ class Settings(BaseSettings):
     limite_requisicoes_conta_hora: int = 20
 
 
+class ConfigApi(BaseSettings):
+    """Configuração da api (não exige as variáveis da OpenAI)."""
+
+    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+
+    database_url: str = DATABASE_URL_PADRAO
+    app_url: str = "http://localhost:3000"
+    smtp_host: str = "localhost"
+    smtp_porta: int = 1025
+    smtp_usuario: str = ""
+    smtp_senha: str = ""
+    smtp_tls: bool = False
+    email_remetente: str = "agenda@localhost"
+    cookie_seguro: bool = False
+    limite_grupos_por_usuario: int = 10
+    limite_perfis_por_usuario: int = 30
+    s3_endpoint: str = "http://localhost:8333"
+    s3_bucket: str = "flyers"
+    s3_access_key: str = "agenda"
+    s3_secret_key: str = "agenda-secret"
+
+
+@lru_cache
+def get_config_api() -> ConfigApi:
+    return ConfigApi()
+
+
 @lru_cache
 def get_settings() -> Settings:
     return Settings()

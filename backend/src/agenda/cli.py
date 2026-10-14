@@ -180,6 +180,17 @@ def coletar(
     typer.echo(f"Coleta enfileirada ou adiantada para {efetivos} de {len(perfis)} perfil(is).")
 
 
+@app.command("api")
+def api(
+    porta: Annotated[int, typer.Option("--porta", help="Porta HTTP.")] = 8000,
+    recarregar: Annotated[bool, typer.Option("--recarregar", help="Recarrega ao mudar o código.")] = False,
+) -> None:
+    """Sobe a api do produto web (rotas em /api)."""
+    import uvicorn
+
+    uvicorn.run("agenda.api.app:app_real", factory=True, host="0.0.0.0", port=porta, reload=recarregar)
+
+
 @app.command("worker")
 def worker(
     tipos: Annotated[str, typer.Option(help="Tipos de job, separados por vírgula.")] = TIPOS_PADRAO,
