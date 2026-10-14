@@ -35,3 +35,8 @@ export function selos(e: Evento): string[] {
   const status = SELOS_STATUS[e.status];
   return status ? [...lista, status] : lista;
 }
+
+export const CATEGORIAS: Record<Evento["categoria"], string> = {
+  show: "Show", festa: "Festa", exposicao: "Exposição", teatro: "Teatro",
+  cinema: "Cinema", oficina: "Oficina", festival: "Festival", outro: "Outro",
+};
