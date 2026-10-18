@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { connection } from "next/server";
 import { Suspense } from "react";
 import { Carregando } from "@/components/Carregando";
 import { ListaPorDia } from "@/components/ListaPorDia";
@@ -14,6 +15,7 @@ function texto(v: string | string[] | undefined): string {
 }
 
 async function ConteudoDaAgenda({ searchParams }: { searchParams: Busca }) {
+  await connection(); // o "hoje" muda a cada requisição
   const busca = await searchParams;
   const periodo = (PERIODOS as string[]).includes(texto(busca.periodo)) ? (texto(busca.periodo) as Periodo) : "semana";
   const valores: ValoresFiltro = {
