@@ -26,6 +26,11 @@ describe("intervalo", () => {
     expect(intervalo("mes", SEGUNDA)).toEqual({ de: "2026-10-19", ate: "2026-10-31" });
     expect(intervalo("mes", new Date("2026-12-31T12:00:00Z"))).toEqual({ de: "2026-12-31", ate: "2026-12-31" });
   });
+
+  it("próximos cobre 60 dias, atravessando mês e ano", () => {
+    expect(intervalo("proximos", DOMINGO_NOITE)).toEqual({ de: "2026-10-18", ate: "2026-12-17" });
+    expect(intervalo("proximos", new Date("2026-12-31T12:00:00Z"))).toEqual({ de: "2026-12-31", ate: "2027-03-01" });
+  });
 });
 
 describe("dias", () => {

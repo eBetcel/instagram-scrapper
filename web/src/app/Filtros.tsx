@@ -10,7 +10,7 @@ import type { Grupo } from "@/lib/tipos";
 export type ValoresFiltro = { periodo: Periodo; grupo: string; categoria: string; gratuito: boolean };
 
 const ROTULOS: Record<Periodo, string> = {
-  hoje: "Hoje", "fim-de-semana": "Fim de semana", semana: "Semana", mes: "Mês",
+  hoje: "Hoje", "fim-de-semana": "Fim de semana", semana: "Semana", mes: "Mês", proximos: "Próximos",
 };
 
 export function Filtros({ valores, grupos }: { valores: ValoresFiltro; grupos: Grupo[] }) {

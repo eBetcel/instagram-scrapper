@@ -3,8 +3,9 @@
 import type { Evento } from "./tipos";
 
 export const FUSO = "America/Sao_Paulo";
-export type Periodo = "hoje" | "fim-de-semana" | "semana" | "mes";
-export const PERIODOS: Periodo[] = ["hoje", "fim-de-semana", "semana", "mes"];
+export type Periodo = "hoje" | "fim-de-semana" | "semana" | "mes" | "proximos";
+export const PERIODOS: Periodo[] = ["hoje", "fim-de-semana", "semana", "mes", "proximos"];
+const DIAS_PROXIMOS = 60;
 
 const dataIso = new Intl.DateTimeFormat("en-CA", { timeZone: FUSO, year: "numeric", month: "2-digit", day: "2-digit" });
 
@@ -41,6 +42,8 @@ export function intervalo(periodo: Periodo, agora: Date): { de: string; ate: str
       const ultimo = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0));
       return { de: hoje, ate: ultimo.toISOString().slice(0, 10) };
     }
+    case "proximos":
+      return { de: hoje, ate: somarDias(hoje, DIAS_PROXIMOS) };
   }
 }
 
