@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { Aviso } from "@/components/Aviso";
-import { campo } from "@/components/campos";
+import { Aviso } from "@/components/ui/Aviso";
+import { Botao } from "@/components/ui/Botao";
+import { Campo } from "@/components/ui/Campo";
 import { chamarApi } from "@/lib/api-cliente";
 
 type Etapa = "email" | "convite" | "enviado";
-
-
 
 export function FormularioEntrar() {
   const [etapa, setEtapa] = useState<Etapa>("email");
@@ -37,31 +36,21 @@ export function FormularioEntrar() {
 
   return (
     <form onSubmit={enviar} className="space-y-3">
-      <label className="block space-y-1 text-sm">
-        <span>E-mail</span>
-        <input type="email" required autoComplete="email" value={email}
-          onChange={(e) => setEmail(e.target.value)} readOnly={etapa === "convite"} className={campo} />
-      </label>
+      <Campo rotulo="E-mail" type="email" required autoComplete="email" value={email}
+        onChange={(e) => setEmail(e.target.value)} readOnly={etapa === "convite"} />
       {etapa === "convite" && (
         <>
-          <p className="text-sm text-stone-600">É a sua primeira vez por aqui: informe o código de convite que você recebeu.</p>
-          <label className="block space-y-1 text-sm">
-            <span>Código de convite</span>
-            <input required value={convite} onChange={(e) => setConvite(e.target.value)}
-              placeholder="XXXX-XXXX" autoCapitalize="characters" className={campo} />
-          </label>
-          <label className="block space-y-1 text-sm">
-            <span>Seu nome</span>
-            <input required maxLength={60} autoComplete="name" value={nome}
-              onChange={(e) => setNome(e.target.value)} className={campo} />
-          </label>
+          <p className="text-sm text-texto">É a sua primeira vez por aqui: informe o código de convite que você recebeu.</p>
+          <Campo rotulo="Código de convite" required value={convite} onChange={(e) => setConvite(e.target.value)}
+            placeholder="XXXX-XXXX" autoCapitalize="characters" />
+          <Campo rotulo="Seu nome" required maxLength={60} autoComplete="name" value={nome}
+            onChange={(e) => setNome(e.target.value)} />
         </>
       )}
       {erro && <Aviso>{erro}</Aviso>}
-      <button type="submit" disabled={enviando}
-        className="w-full rounded-md bg-stone-900 px-3 py-2 font-medium text-white disabled:opacity-50">
+      <Botao variante="primario" type="submit" disabled={enviando} className="w-full">
         {enviando ? "Enviando…" : etapa === "convite" ? "Criar conta e receber o link" : "Receber link de acesso"}
-      </button>
+      </Botao>
     </form>
   );
 }

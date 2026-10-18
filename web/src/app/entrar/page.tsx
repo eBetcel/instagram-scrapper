@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Aviso } from "@/components/Aviso";
+import { Aviso } from "@/components/ui/Aviso";
+import { Cartao } from "@/components/ui/Cartao";
+import { Titulo } from "@/components/ui/Titulo";
 import { FormularioEntrar } from "./FormularioEntrar";
 
 export const metadata: Metadata = { title: "Entrar" };
@@ -12,12 +14,14 @@ async function AvisoDoLink({ searchParams }: { searchParams: PageProps<"/entrar"
 
 export default function Entrar({ searchParams }: PageProps<"/entrar">) {
   return (
-    <section className="mx-auto max-w-sm space-y-4">
-      <h1 className="text-xl font-semibold">Entrar</h1>
+    <section className="mx-auto max-w-sm space-y-4 pt-4 md:pt-10">
+      <Titulo nivel={1}>Entrar</Titulo>
       <Suspense fallback={null}>
         <AvisoDoLink searchParams={searchParams} />
       </Suspense>
-      <FormularioEntrar />
+      <Cartao className="p-6">
+        <FormularioEntrar />
+      </Cartao>
     </section>
   );
 }
