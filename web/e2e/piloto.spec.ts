@@ -50,16 +50,19 @@ test("piloto: convite, grupo, agenda, página pública e seguir", async ({ page,
   await page.getByRole("button", { name: "Criar grupo" }).click();
   await expect(page).toHaveURL(/\/g\/agenda-e2e$/);
   const adicionar = page.getByLabel("Adicionar @");
-  await adicionar.fill("@casa_e2e");
-  await page.getByRole("button", { name: "Adicionar" }).click();
+  for (const perfil of ["@casa_e2e", "perfil_novo_e2e", "nome inválido!"]) {
+    await adicionar.fill(perfil);
+    await page.getByRole("button", { name: "Adicionar", exact: true }).click();
+  }
+  // Nada é gravado antes de confirmar.
+  await expect(page.getByText("Para confirmar")).toBeVisible();
+  await page.getByRole("button", { name: "Confirmar (3)" }).click();
   await expect(page.getByText("@casa_e2e", { exact: true })).toBeVisible();
-  await adicionar.fill("perfil_novo_e2e");
-  await page.getByRole("button", { name: "Adicionar" }).click();
   await expect(page.getByText(/@perfil_novo_e2e · coletando…/)).toBeVisible();
-  await adicionar.fill("nome inválido!");
-  await page.getByRole("button", { name: "Adicionar" }).click();
-  // O Next também tem um role=alert (anúncio de rota): filtra pelo texto.
-  await expect(page.getByRole("alert").filter({ hasText: "@ inválido" })).toBeVisible();
+  // O @ recusado fica na lista para corrigir ou descartar.
+  await expect(page.getByText(/@nome inválido! · @ inválido/)).toBeVisible();
+  await page.getByRole("button", { name: "descartar" }).click();
+  await expect(page.getByText("Para confirmar")).toBeHidden();
 
   // 5. A agenda mostra o evento do @.
   await page.goto("/");

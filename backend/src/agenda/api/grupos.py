@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from agenda.api.consultas import eventos_do_grupo, resumir
 from agenda.api.deps import deps_api, sessao_db, usuario_atual, usuario_opcional
-from agenda.api.esquemas import GrupoDetalhe, GrupoSaida, PerfilNoGrupo
+from agenda.api.esquemas import GrupoDetalhe, GrupoSaida, LoteSaida, PerfilNoGrupo, ResultadoPerfil
 from agenda.models import Grupo, GrupoPerfil, GrupoSeguidor, Perfil, Usuario
 from agenda.extracao.regras import FUSO
 from agenda.jobs import reativar_ou_enfileirar
@@ -91,19 +91,18 @@ class PerfilEntrada(BaseModel):
     username: str
 
 
-@rotas.post("/grupos/{slug}/perfis", status_code=201)
-def adicionar_perfil(slug: str, dados: PerfilEntrada, response: Response,
-                     s: Session = Depends(sessao_db), u: Usuario = Depends(usuario_atual),
-                     deps=Depends(deps_api)) -> PerfilNoGrupo:
-    g = grupo_do_dono(s, slug, u)
-    username = normalizar_username(dados.username)
+class LoteEntrada(BaseModel):
+    usernames: list[str] = Field(min_length=1, max_length=50)
+
+
+def _incluir_perfil(s: Session, g: Grupo, u: Usuario, bruto: str, limite: int) -> tuple[PerfilNoGrupo, bool]:
+    """Põe o @ no grupo (e enfileira a coleta se nunca foi coletado). Devolve (perfil, já estava)."""
+    username = normalizar_username(bruto)
     if username is None:
         raise HTTPException(422, "@ inválido: use letras, dígitos, '.' e '_', até 30 caracteres")
     perfil = s.scalar(select(Perfil).where(Perfil.username == username))
     if perfil is not None and s.get(GrupoPerfil, (g.id, perfil.id)) is not None:
-        response.status_code = 200
-        return PerfilNoGrupo(username=username, status=status_perfil(perfil))
-    limite = deps.config.limite_perfis_por_usuario
+        return PerfilNoGrupo(username=username, status=status_perfil(perfil)), True
     dela = select(GrupoPerfil.perfil_id).join(Grupo, Grupo.id == GrupoPerfil.grupo_id).where(Grupo.dono_id == u.id)
     ja_e_dela = perfil is not None and s.scalar(dela.where(GrupoPerfil.perfil_id == perfil.id).limit(1))
     if not ja_e_dela and s.scalar(select(func.count(func.distinct(dela.subquery().c.perfil_id)))) >= limite:
@@ -116,7 +115,33 @@ def adicionar_perfil(slug: str, dados: PerfilEntrada, response: Response,
     if perfil.ultima_coleta_em is None and perfil.status == "ativo":
         reativar_ou_enfileirar(s, "coletar_perfil", {"perfil_id": perfil.id}, f"coletar:{perfil.id}")
     s.flush()
-    return PerfilNoGrupo(username=username, status=status_perfil(perfil))
+    return PerfilNoGrupo(username=username, status=status_perfil(perfil)), False
+
+
+@rotas.post("/grupos/{slug}/perfis", status_code=201)
+def adicionar_perfil(slug: str, dados: PerfilEntrada, response: Response,
+                     s: Session = Depends(sessao_db), u: Usuario = Depends(usuario_atual),
+                     deps=Depends(deps_api)) -> PerfilNoGrupo:
+    g = grupo_do_dono(s, slug, u)
+    saida, ja_estava = _incluir_perfil(s, g, u, dados.username, deps.config.limite_perfis_por_usuario)
+    if ja_estava:
+        response.status_code = 200
+    return saida
+
+
+@rotas.post("/grupos/{slug}/perfis/lote")
+def adicionar_perfis(slug: str, dados: LoteEntrada, s: Session = Depends(sessao_db),
+                     u: Usuario = Depends(usuario_atual), deps=Depends(deps_api)) -> LoteSaida:
+    """Confirma vários @s de uma vez; cada um é aceito ou recusado por conta própria."""
+    g = grupo_do_dono(s, slug, u)
+    resultados = []
+    for bruto in dados.usernames:
+        try:
+            perfil, _ = _incluir_perfil(s, g, u, bruto, deps.config.limite_perfis_por_usuario)
+            resultados.append(ResultadoPerfil(username=perfil.username, status=perfil.status))
+        except HTTPException as e:
+            resultados.append(ResultadoPerfil(username=bruto, erro=e.detail))
+    return LoteSaida(resultados=resultados)
 
 
 @rotas.delete("/grupos/{slug}/perfis/{username}", status_code=204)

@@ -61,6 +61,12 @@ export type PerfilNoGrupo = {
   status: "ativo" | "coletando" | "privado" | "inexistente";
 };
 
+export type ResultadoPerfil = {
+  username: string;
+  status: PerfilNoGrupo["status"] | null;
+  erro: string | null;
+};
+
 export type GrupoDetalhe = Grupo & {
   perfis: PerfilNoGrupo[];
   eventos: Evento[];

@@ -95,3 +95,53 @@ def test_remover(api):
     assert api.cliente.delete(f"/api/grupos/{slug}/perfis/casax").status_code == 204
     assert api.cliente.get(f"/api/grupos/{slug}").json()["perfis"] == []
     assert api.cliente.delete(f"/api/grupos/{slug}/perfis/casax").status_code == 404
+
+
+def _lote(api, slug, usernames, cliente=None):
+    return (cliente or api.cliente).post(f"/api/grupos/{slug}/perfis/lote", json={"usernames": usernames})
+
+
+def test_lote_adiciona_varios_e_enfileira_so_os_novos(api):
+    with api.fabrica() as s:
+        s.add(Perfil(username="velho", ultima_coleta_em=datetime.now(UTC)))
+        s.commit()
+    logar(api)
+    slug = _grupo(api)
+    r = _lote(api, slug, ["@CasaX", "velho", "casax"])
+    assert r.status_code == 200
+    assert r.json()["resultados"] == [
+        {"username": "casax", "status": "coletando", "erro": None},
+        {"username": "velho", "status": "ativo", "erro": None},
+        {"username": "casax", "status": "coletando", "erro": None},
+    ]
+    assert len(_jobs(api)) == 1
+    assert api.cliente.get(f"/api/grupos/{slug}").json()["n_perfis"] == 2
+
+
+def test_lote_invalido_nao_derruba_os_validos(api):
+    logar(api)
+    slug = _grupo(api)
+    r = _lote(api, slug, ["casax", "@@inválido!"])
+    resultados = r.json()["resultados"]
+    assert resultados[0]["erro"] is None
+    assert resultados[1]["username"] == "@@inválido!" and resultados[1]["status"] is None
+    assert "inválido" in resultados[1]["erro"]
+    assert api.cliente.get(f"/api/grupos/{slug}").json()["n_perfis"] == 1
+
+
+def test_lote_respeita_o_limite_de_perfis(api):
+    logar(api)
+    slug = _grupo(api)
+    limite = 30
+    r = _lote(api, slug, [f"perfil{i}" for i in range(limite + 1)])
+    erros = [x["erro"] for x in r.json()["resultados"] if x["erro"]]
+    assert len(erros) == 1 and str(limite) in erros[0]
+    assert api.cliente.get(f"/api/grupos/{slug}").json()["n_perfis"] == limite
+
+
+def test_lote_so_o_dono(api):
+    logar(api)
+    slug = _grupo(api)
+    outro = TestClient(api.cliente.app)
+    logar(api, "outra@exemplo.com", cliente=outro)
+    assert _lote(api, slug, ["casax"], cliente=outro).status_code == 403

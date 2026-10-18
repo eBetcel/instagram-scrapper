@@ -14,6 +14,16 @@ class PerfilNoGrupo(BaseModel):
     status: StatusPerfil
 
 
+class ResultadoPerfil(BaseModel):
+    username: str
+    status: StatusPerfil | None = None
+    erro: str | None = None
+
+
+class LoteSaida(BaseModel):
+    resultados: list[ResultadoPerfil]
+
+
 class GrupoSaida(BaseModel):
     slug: str
     nome: str

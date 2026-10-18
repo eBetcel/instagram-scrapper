@@ -6,13 +6,17 @@ import { Aviso } from "@/components/Aviso";
 import { botao, botaoSecundario, campo } from "@/components/campos";
 import { chamarApi } from "@/lib/api-cliente";
 import { STATUS_PERFIL as STATUS } from "@/lib/formato";
-import type { GrupoDetalhe } from "@/lib/tipos";
+import { adicionarPendente, restantes } from "@/lib/pendentes";
+import type { GrupoDetalhe, ResultadoPerfil } from "@/lib/tipos";
 
 export function EditorGrupo({ grupo }: { grupo: GrupoDetalhe }) {
   const router = useRouter();
   const [nome, setNome] = useState(grupo.nome);
   const [descricao, setDescricao] = useState(grupo.descricao ?? "");
   const [username, setUsername] = useState("");
+  const [pendentes, setPendentes] = useState<string[]>([]);
+  const [recusados, setRecusados] = useState<Record<string, string>>({});
+  const [confirmando, setConfirmando] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
   const base = `/grupos/${grupo.slug}`;
@@ -23,6 +27,23 @@ export function EditorGrupo({ grupo }: { grupo: GrupoDetalhe }) {
     const r = await acao();
     if (!r.ok) return setErro(r.mensagem);
     sucesso?.();
+    router.refresh();
+  }
+
+  async function confirmar() {
+    setErro(null);
+    setAviso(null);
+    setConfirmando(true);
+    const r = await chamarApi<{ resultados: ResultadoPerfil[] }>(`${base}/perfis/lote`, {
+      method: "POST", body: JSON.stringify({ usernames: pendentes }),
+    });
+    setConfirmando(false);
+    if (!r.ok) return setErro(r.mensagem);
+    const sobras = restantes(pendentes, r.dados.resultados);
+    const aceitos = pendentes.length - sobras.length;
+    setPendentes(sobras.map((x) => x.username));
+    setRecusados(Object.fromEntries(sobras.map((x) => [x.username, x.erro])));
+    if (aceitos) setAviso(`${aceitos} perfil(is) adicionado(s). Os novos estão sendo coletados e logo aparecem na agenda.`);
     router.refresh();
   }
 
@@ -57,13 +78,32 @@ export function EditorGrupo({ grupo }: { grupo: GrupoDetalhe }) {
         </ul>
         <form className="flex gap-2" onSubmit={(e) => {
           e.preventDefault();
-          executar(() => chamarApi(`${base}/perfis`, { method: "POST", body: JSON.stringify({ username }) }),
-            () => setUsername(""));
+          setPendentes((lista) => adicionarPendente(lista, username));
+          setUsername("");
         }}>
           <input aria-label="Adicionar @" required value={username} onChange={(e) => setUsername(e.target.value)}
             placeholder="@perfil" className={campo} />
-          <button type="submit" className={botao}>Adicionar</button>
+          <button type="submit" className={botaoSecundario}>Adicionar</button>
         </form>
+        {pendentes.length > 0 && (
+          <div className="space-y-2 rounded-md bg-stone-50 p-3">
+            <p className="text-sm font-medium">Para confirmar</p>
+            <ul className="space-y-1 text-sm">
+              {pendentes.map((p) => (
+                <li key={p} className="flex items-center justify-between gap-2">
+                  <span>@{p}{recusados[p] && <span className="text-red-700"> · {recusados[p]}</span>}</span>
+                  <button type="button" className="text-stone-600 underline"
+                    onClick={() => setPendentes((lista) => lista.filter((x) => x !== p))}>
+                    descartar
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <button type="button" className={botao} disabled={confirmando} onClick={confirmar}>
+              {confirmando ? "Confirmando…" : `Confirmar (${pendentes.length})`}
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2">
