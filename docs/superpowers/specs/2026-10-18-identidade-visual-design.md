@@ -54,10 +54,10 @@ Definidas em `:root` e redefinidas em `@media (prefers-color-scheme: dark)`. Exp
 | `tinta`        | `#1c1a17` | `#f5f1ea` | títulos, texto principal                                  |
 | `texto`        | `#3d3a35` | `#d6d1c8` | texto corrido                                             |
 | `apagado`      | `#6c6860` | `#9e998f` | hora, local, legendas, rótulos de dia                     |
-| `acento`       | `#c8613f` | `#de7a58` | fundo do botão primário, borda/anel de foco               |
+| `acento`       | `#b4532f` | `#de7a58` | fundo do botão primário, borda/anel de foco               |
 | `acento-forte` | `#a64c2e` | `#ec9070` | links e texto em acento; botão primário pressionado        |
 | `erro`         | `#b93c3c` | `#e57373` | avisos de erro, ação de perigo                            |
-| `sucesso`      | `#3f7a52` | `#7fbf8f` | avisos de sucesso/info                                    |
+| `sucesso`      | `#37704a` | `#7fbf8f` | avisos de sucesso/info                                    |
 
 Regra de contraste: texto pequeno ou link em acento usa sempre `acento-forte`. O `acento`
 puro só aparece como fundo do botão primário (texto branco, 14px/600) e em bordas/anéis.
@@ -84,7 +84,7 @@ Carregadas por `next/font/google` (auto-hospedadas), expostas como `--font-serif
   (selos, chips).
 - Sombra: só `0 1px 3px rgb(20 20 19 / 0.06)` no `Cartao`; no escuro, nenhuma.
 - Espaçamento em múltiplos de 4px; largura de conteúdo continua `max-w-2xl`.
-- Foco: `focus-visible` com anel de 3px em `acento` a 25% e borda `acento` em campos.
+- Foco: `focus-visible` com anel sólido de 2px em `acento-forte` e offset de 2px na cor `fundo`; campos também com borda `acento`.
 
 ## 4. Componentes base (`web/src/components/ui/`)
 
@@ -193,3 +193,12 @@ muda.
 - **Lint e build:** `npm run lint` e `next build` sem erros.
 - **Revisão visual:** capturas das seis telas em claro/escuro × celular/desktop,
   revisadas pela pessoa antes do commit final.
+
+## 9. Emendas (2026-10-18, revisão final)
+
+- `acento` claro passou de `#c8613f` para `#b4532f` e `sucesso` claro de `#3f7a52` para `#37704a`: com os valores
+  originais, o texto branco do botão primário (~4,0:1) e o aviso de sucesso (~4,35:1) ficavam abaixo de AA, o que
+  violava o critério de sucesso 4.
+- O anel de foco passou a ser sólido (`acento-forte`, 2px, offset 2px): o anel de 25% ficava em ~1,35:1 e era
+  quase invisível em botões, chips e links da navegação.
+- O botão primário usa peso 600 (`font-semibold`); os demais botões, 500.
