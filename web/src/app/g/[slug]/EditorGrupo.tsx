@@ -2,8 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Aviso } from "@/components/Aviso";
-import { botao, botaoSecundario, campo } from "@/components/campos";
+import { Aviso } from "@/components/ui/Aviso";
+import { Botao } from "@/components/ui/Botao";
+import { AreaTexto, Campo } from "@/components/ui/Campo";
+import { Cartao } from "@/components/ui/Cartao";
+import { Titulo } from "@/components/ui/Titulo";
 import { chamarApi } from "@/lib/api-cliente";
 import { STATUS_PERFIL as STATUS } from "@/lib/formato";
 import { adicionarPendente, restantes } from "@/lib/pendentes";
@@ -48,8 +51,8 @@ export function EditorGrupo({ grupo }: { grupo: GrupoDetalhe }) {
   }
 
   return (
-    <section className="space-y-5 rounded-lg border border-stone-200 bg-white p-4">
-      <h2 className="font-semibold">Editar grupo</h2>
+    <Cartao as="section" className="space-y-5 p-4">
+      <Titulo nivel={2}>Editar grupo</Titulo>
       {erro && <Aviso>{erro}</Aviso>}
       {aviso && <Aviso tipo="info">{aviso}</Aviso>}
 
@@ -58,64 +61,66 @@ export function EditorGrupo({ grupo }: { grupo: GrupoDetalhe }) {
         executar(() => chamarApi(base, { method: "PATCH", body: JSON.stringify({ nome, descricao }) }),
           () => setAviso("Grupo salvo."));
       }}>
-        <input aria-label="Nome do grupo" required maxLength={80} value={nome} onChange={(e) => setNome(e.target.value)} className={campo} />
-        <textarea aria-label="Descrição do grupo" maxLength={500} value={descricao} onChange={(e) => setDescricao(e.target.value)} className={campo} rows={2} />
-        <button type="submit" className={botaoSecundario}>Salvar</button>
+        <Campo aria-label="Nome do grupo" required maxLength={80} value={nome} onChange={(e) => setNome(e.target.value)} />
+        <AreaTexto aria-label="Descrição do grupo" maxLength={500} value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={2} />
+        <Botao variante="secundario" type="submit">Salvar</Botao>
       </form>
 
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold">Perfis do Instagram</h3>
+        <h3 className="text-sm font-semibold text-tinta">Perfis do Instagram</h3>
         <ul className="space-y-1 text-sm">
           {grupo.perfis.map((p) => (
             <li key={p.username} className="flex items-center justify-between gap-2">
-              <span>@{p.username}{STATUS[p.status] && <span className="text-stone-500"> · {STATUS[p.status]}</span>}</span>
-              <button type="button" className="text-red-700 underline"
+              <span>@{p.username}{STATUS[p.status] && <span className="text-apagado"> · {STATUS[p.status]}</span>}</span>
+              <Botao variante="perigo" tamanho="sm"
                 onClick={() => executar(() => chamarApi(`${base}/perfis/${p.username}`, { method: "DELETE" }))}>
                 remover
-              </button>
+              </Botao>
             </li>
           ))}
         </ul>
-        <form className="flex gap-2" onSubmit={(e) => {
+        <form className="flex items-start gap-2" onSubmit={(e) => {
           e.preventDefault();
           setPendentes((lista) => adicionarPendente(lista, username));
           setUsername("");
         }}>
-          <input aria-label="Adicionar @" required value={username} onChange={(e) => setUsername(e.target.value)}
-            placeholder="@perfil" className={campo} />
-          <button type="submit" className={botaoSecundario}>Adicionar</button>
+          <div className="min-w-0 flex-1">
+            <Campo aria-label="Adicionar @" required value={username} onChange={(e) => setUsername(e.target.value)}
+              placeholder="@perfil" />
+          </div>
+          <Botao variante="secundario" type="submit">Adicionar</Botao>
         </form>
         {pendentes.length > 0 && (
-          <div className="space-y-2 rounded-md bg-stone-50 p-3">
-            <p className="text-sm font-medium">Para confirmar</p>
+          <div className="space-y-2 rounded-lg bg-suave p-3">
+            <p className="text-sm font-medium text-tinta">Para confirmar</p>
             <ul className="space-y-1 text-sm">
               {pendentes.map((p) => (
                 <li key={p} className="flex items-center justify-between gap-2">
-                  <span>@{p}{recusados[p] && <span className="text-red-700"> · {recusados[p]}</span>}</span>
-                  <button type="button" className="text-stone-600 underline"
+                  <span>@{p}{recusados[p] && <span className="text-erro"> · {recusados[p]}</span>}</span>
+                  <Botao variante="fantasma" tamanho="sm"
                     onClick={() => setPendentes((lista) => lista.filter((x) => x !== p))}>
                     descartar
-                  </button>
+                  </Botao>
                 </li>
               ))}
             </ul>
-            <button type="button" className={botao} disabled={confirmando} onClick={confirmar}>
+            <Botao variante="primario" disabled={confirmando} onClick={confirmar}>
               {confirmando ? "Confirmando…" : `Confirmar (${pendentes.length})`}
-            </button>
+            </Botao>
           </div>
         )}
       </div>
 
       <div className="flex flex-wrap gap-2">
-        <button type="button" className={botaoSecundario} onClick={async () => {
+        <Botao variante="secundario" onClick={async () => {
           await navigator.clipboard.writeText(location.href);
           setAviso("Link copiado. Quem abrir pode seguir o grupo.");
-        }}>Copiar link</button>
-        <button type="button" className="rounded-md px-3 py-2 text-sm text-red-700 underline" onClick={() => {
+        }}>Copiar link</Botao>
+        <Botao variante="perigo" onClick={() => {
           if (!confirm(`Apagar o grupo "${grupo.nome}"? Quem segue deixa de ver os eventos dele.`)) return;
           executar(() => chamarApi(base, { method: "DELETE" }), () => router.push("/grupos"));
-        }}>Apagar grupo</button>
+        }}>Apagar grupo</Botao>
       </div>
-    </section>
+    </Cartao>
   );
 }

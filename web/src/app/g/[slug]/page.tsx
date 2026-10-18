@@ -1,7 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Carregando } from "@/components/Carregando";
 import { ListaPorDia } from "@/components/ListaPorDia";
+import { Carregando } from "@/components/ui/Carregando";
+import { Selo } from "@/components/ui/Selo";
+import { Titulo } from "@/components/ui/Titulo";
+import { Vazio } from "@/components/ui/Vazio";
 import { apiServidorOpcional } from "@/lib/api-servidor";
 import { STATUS_PERFIL as STATUS } from "@/lib/formato";
 import type { GrupoDetalhe, Usuario } from "@/lib/tipos";
@@ -30,9 +33,9 @@ async function Conteudo({ params }: { params: Params }) {
   return (
     <div className="space-y-6">
       <header className="space-y-2">
-        <h1 className="text-2xl font-semibold">{g.nome}</h1>
-        {g.descricao && <p className="text-stone-700">{g.descricao}</p>}
-        <p className="text-sm text-stone-500">
+        <Titulo nivel={1}>{g.nome}</Titulo>
+        {g.descricao && <p className="text-texto">{g.descricao}</p>}
+        <p className="text-sm text-apagado">
           Curadoria de {g.curador} · {g.n_seguidores} seguidor{g.n_seguidores === 1 ? "" : "es"}
         </p>
         {!g.sou_dono && <BotaoSeguir slug={g.slug} logado={eu !== null} sigo={g.sigo} />}
@@ -41,20 +44,22 @@ async function Conteudo({ params }: { params: Params }) {
         <EditorGrupo grupo={g} />
       ) : (
         <section className="space-y-1">
-          <h2 className="font-semibold">Perfis</h2>
+          <Titulo nivel={2}>Perfis</Titulo>
           <ul className="flex flex-wrap gap-2 text-sm">
             {g.perfis.map((p) => (
-              <li key={p.username} className="rounded-full border border-stone-200 bg-white px-2 py-0.5">
-                @{p.username}{STATUS[p.status] && <span className="text-stone-500"> · {STATUS[p.status]}</span>}
+              <li key={p.username}>
+                <Selo tom="neutro">
+                  @{p.username}{STATUS[p.status] && <span className="text-apagado"> · {STATUS[p.status]}</span>}
+                </Selo>
               </li>
             ))}
           </ul>
         </section>
       )}
       <section className="space-y-2">
-        <h2 className="font-semibold">Próximos eventos</h2>
+        <Titulo nivel={2}>Próximos eventos</Titulo>
         {g.eventos.length === 0 ? (
-          <p className="text-sm text-stone-500">Nenhum evento nos próximos 30 dias.</p>
+          <Vazio>Nenhum evento nos próximos 30 dias.</Vazio>
         ) : (
           <ListaPorDia eventos={g.eventos} />
         )}

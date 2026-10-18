@@ -1,15 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { botao, botaoSecundario } from "@/components/campos";
+import { Botao } from "@/components/ui/Botao";
 import { chamarApi } from "@/lib/api-cliente";
 
 export function BotaoSeguir({ slug, logado, sigo }: { slug: string; logado: boolean; sigo: boolean }) {
   const router = useRouter();
   const [enviando, setEnviando] = useState(false);
-  if (!logado) return <Link href="/entrar" className={`inline-block ${botao}`}>Seguir</Link>;
+  if (!logado) return <Botao variante="primario" href="/entrar">Seguir</Botao>;
   async function alternar() {
     setEnviando(true);
     await chamarApi(`/grupos/${slug}/seguir`, { method: sigo ? "DELETE" : "POST" });
@@ -17,8 +16,8 @@ export function BotaoSeguir({ slug, logado, sigo }: { slug: string; logado: bool
     router.refresh();
   }
   return (
-    <button onClick={alternar} disabled={enviando} className={sigo ? botaoSecundario : botao}>
+    <Botao variante={sigo ? "secundario" : "primario"} onClick={alternar} disabled={enviando}>
       {sigo ? "Deixar de seguir" : "Seguir"}
-    </button>
+    </Botao>
   );
 }

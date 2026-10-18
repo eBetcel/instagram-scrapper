@@ -2,8 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { Aviso } from "@/components/Aviso";
-import { botao, campo } from "@/components/campos";
+import { Aviso } from "@/components/ui/Aviso";
+import { Botao } from "@/components/ui/Botao";
+import { AreaTexto, Campo } from "@/components/ui/Campo";
+import { Cartao } from "@/components/ui/Cartao";
+import { Titulo } from "@/components/ui/Titulo";
 import { chamarApi } from "@/lib/api-cliente";
 import type { Grupo } from "@/lib/tipos";
 
@@ -27,19 +30,13 @@ export function NovoGrupo() {
   }
 
   return (
-    <form onSubmit={criar} className="space-y-3 rounded-lg border border-stone-200 bg-white p-4">
-      <h2 className="font-semibold">Novo grupo</h2>
-      <label className="block space-y-1 text-sm">
-        <span>Nome</span>
-        <input required maxLength={80} value={nome} onChange={(e) => setNome(e.target.value)}
-          placeholder="Ex.: Jazz em Natal" className={campo} />
-      </label>
-      <label className="block space-y-1 text-sm">
-        <span>Descrição (opcional)</span>
-        <textarea maxLength={500} value={descricao} onChange={(e) => setDescricao(e.target.value)} className={campo} rows={2} />
-      </label>
+    <Cartao as="form" onSubmit={criar} className="space-y-3 p-4">
+      <Titulo nivel={2}>Novo grupo</Titulo>
+      <Campo rotulo="Nome" required maxLength={80} value={nome} onChange={(e) => setNome(e.target.value)}
+        placeholder="Ex.: Jazz em Natal" />
+      <AreaTexto rotulo="Descrição (opcional)" maxLength={500} value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={2} />
       {erro && <Aviso>{erro}</Aviso>}
-      <button type="submit" disabled={enviando} className={botao}>{enviando ? "Criando…" : "Criar grupo"}</button>
-    </form>
+      <Botao variante="primario" type="submit" disabled={enviando}>{enviando ? "Criando…" : "Criar grupo"}</Botao>
+    </Cartao>
   );
 }
