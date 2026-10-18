@@ -53,3 +53,10 @@ const avisos: Record<TipoAviso, string> = {
 export function classesAviso(tipo: TipoAviso = "erro"): string {
   return `rounded-lg border px-3 py-2 text-sm ${avisos[tipo]}`;
 }
+
+export function classesCampo(comErro: boolean): string {
+  const base =
+    "w-full min-h-11 rounded-lg border bg-superficie px-3.5 py-2.5 text-base text-tinta placeholder:text-apagado";
+  const borda = comErro ? "border-erro" : "border-linha";
+  return `${base} ${borda} ${foco} focus-visible:border-acento`;
+}

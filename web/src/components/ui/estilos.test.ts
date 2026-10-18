@@ -1,5 +1,25 @@
 import { describe, expect, it } from "vitest";
-import { classesAviso, classesBotao, classesChip, classesSelo } from "./estilos";
+import {
+  classesAviso,
+  classesBotao,
+  classesCampo,
+  classesChip,
+  classesSelo,
+} from "./estilos";
+
+describe("classesCampo", () => {
+  it("tem 44px, fundo superficie e borda linha", () => {
+    const c = classesCampo(false);
+    expect(c).toContain("min-h-11");
+    expect(c).toContain("bg-superficie");
+    expect(c).toContain("border-linha");
+    expect(c).toContain("focus-visible:border-acento");
+  });
+  it("com erro troca a borda para erro", () => {
+    expect(classesCampo(true)).toContain("border-erro");
+    expect(classesCampo(true)).not.toContain("border-linha");
+  });
+});
 
 describe("classesBotao", () => {
   it("primario usa o acento como fundo e o texto sobre-acento", () => {
