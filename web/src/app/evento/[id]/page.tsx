@@ -49,15 +49,15 @@ async function Detalhe({ params }: { params: PageProps<"/evento/[id]">["params"]
         <p className="text-texto">{rotuloDia(diaDe(e.inicio), diaDe(new Date()))} · {hora(e)}</p>
       </header>
       {temDetalhes && (
-      <Cartao className="p-4 text-sm">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
-        {e.local_nome && <><dt className="text-apagado">Local</dt><dd className="break-words text-tinta">{e.local_nome}</dd></>}
-        {e.endereco && <><dt className="text-apagado">Endereço</dt><dd className="break-words text-tinta">{e.endereco}</dd></>}
-        {e.cidade && <><dt className="text-apagado">Cidade</dt><dd className="break-words text-tinta">{e.cidade}</dd></>}
-        {valor && <><dt className="text-apagado">Preço</dt><dd className="break-words text-tinta">{valor}</dd></>}
-        {e.festival && <><dt className="text-apagado">Festival</dt><dd className="break-words text-tinta">{e.festival}</dd></>}
-      </dl>
-      </Cartao>
+        <Cartao className="p-4 text-sm">
+          <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2">
+            {e.local_nome && <><dt className="text-apagado">Local</dt><dd className="min-w-0 break-words text-tinta">{e.local_nome}</dd></>}
+            {e.endereco && <><dt className="text-apagado">Endereço</dt><dd className="min-w-0 break-words text-tinta">{e.endereco}</dd></>}
+            {e.cidade && <><dt className="text-apagado">Cidade</dt><dd className="min-w-0 break-words text-tinta">{e.cidade}</dd></>}
+            {valor && <><dt className="text-apagado">Preço</dt><dd className="min-w-0 break-words text-tinta">{valor}</dd></>}
+            {e.festival && <><dt className="text-apagado">Festival</dt><dd className="min-w-0 break-words text-tinta">{e.festival}</dd></>}
+          </dl>
+        </Cartao>
       )}
       {e.link_ingresso && (
         <Botao variante="primario" href={e.link_ingresso} externo className="w-full md:w-auto">Ingressos</Botao>
@@ -68,7 +68,7 @@ async function Detalhe({ params }: { params: PageProps<"/evento/[id]">["params"]
           <p className="text-sm text-texto">{e.artistas.join(", ")}</p>
         </section>
       )}
-      {e.descricao && <p className="whitespace-pre-line text-sm text-texto">{e.descricao}</p>}
+      {e.descricao && <p className="whitespace-pre-line break-words text-sm text-texto">{e.descricao}</p>}
       <section className="space-y-1">
         <Titulo nivel={2}>Divulgado por</Titulo>
         <ul className="space-y-1 text-sm">
@@ -85,7 +85,7 @@ async function Detalhe({ params }: { params: PageProps<"/evento/[id]">["params"]
           <Titulo nivel={2}>Histórico</Titulo>
           <ul className="space-y-1 text-sm">
             {e.revisoes.map((r, i) => (
-              <li key={i}>
+              <li key={i} className="break-words">
                 <span className="text-apagado">{data.format(new Date(r.criado_em))}</span>{" "}
                 {CAMPOS[r.campo] ?? r.campo}: {valorRevisao(r.campo, r.valor_anterior)} → {valorRevisao(r.campo, r.valor_novo)}
               </li>

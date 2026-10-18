@@ -10,7 +10,7 @@ export function EventoCard({ evento }: { evento: Evento }) {
   const onde = [evento.local_nome, evento.cidade].filter(Boolean).join(" · ");
   const alertas = selos(evento);
   return (
-    <Cartao as="article" className="relative flex gap-3 p-3">
+    <Cartao as="article" className="relative isolate flex gap-3 p-3">
       {evento.imagem ? (
         // eslint-disable-next-line @next/next/no-img-element -- flyer servido pela api, já na mesma origem
         <img src={evento.imagem} alt="" loading="lazy" className="h-20 w-20 flex-none rounded-lg object-cover" />
@@ -32,7 +32,7 @@ export function EventoCard({ evento }: { evento: Evento }) {
         <p className="relative z-10 flex flex-wrap items-center gap-3 text-sm">
           {valor && (valor === "Grátis" ? <Selo tom="acento">{valor}</Selo> : <span className="text-texto">{valor}</span>)}
           {evento.link_ingresso && (
-            <Botao variante="fantasma" tamanho="sm" href={evento.link_ingresso} externo className="px-0">Ingressos →</Botao>
+            <Botao variante="fantasma" tamanho="sm" href={evento.link_ingresso} externo className="-mx-3" aria-label="Ingressos">Ingressos →</Botao>
           )}
         </p>
       </div>

@@ -30,14 +30,14 @@ export function Filtros({ valores, grupos }: { valores: ValoresFiltro; grupos: G
           <Chip key={p} ativo={valores.periodo === p} onClick={() => mudar({ periodo: p })}>{ROTULOS[p]}</Chip>
         ))}
       </div>
-      <div role="group" aria-label="Categoria" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none]">
+      <div role="group" aria-label="Categoria" className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] md:mx-0 md:flex-wrap md:overflow-visible md:px-0">
         <Chip ativo={valores.categoria === ""} onClick={() => mudar({ categoria: "" })}>Todas</Chip>
         {Object.entries(CATEGORIAS).map(([v, r]) => (
           <Chip key={v} ativo={valores.categoria === v} onClick={() => mudar({ categoria: valores.categoria === v ? "" : v })}>{r}</Chip>
         ))}
         <Chip ativo={valores.gratuito} onClick={() => mudar({ gratuito: !valores.gratuito })}>Grátis</Chip>
       </div>
-      <Seletor aria-label="Grupo" value={valores.grupo} onChange={(e) => mudar({ grupo: e.target.value })} className="md:w-auto">
+      <Seletor aria-label="Grupo" value={valores.grupo} onChange={(e) => mudar({ grupo: e.target.value })} className="md:w-fit md:min-w-56">
         <option value="">Todos os grupos</option>
         {grupos.map((g) => <option key={g.slug} value={g.slug}>{g.nome}</option>)}
       </Seletor>

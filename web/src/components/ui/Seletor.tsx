@@ -7,10 +7,10 @@ export function Seletor({
   ...resto
 }: SelectHTMLAttributes<HTMLSelectElement>) {
   return (
-    <div className="relative">
+    <div className={`relative${className ? ` ${className}` : ""}`}>
       <select
         {...resto}
-        className={`${classesCampo(false)} appearance-none pr-9${className ? ` ${className}` : ""}`}
+        className={`${classesCampo(false)} appearance-none pr-9`}
       >
         {children}
       </select>

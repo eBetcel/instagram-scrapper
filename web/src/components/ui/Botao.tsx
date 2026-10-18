@@ -6,6 +6,7 @@ type Comuns = {
   variante?: VarianteBotao;
   tamanho?: TamanhoBotao;
   className?: string;
+  "aria-label"?: string;
   children: ReactNode;
 };
 
@@ -19,13 +20,13 @@ export function Botao(props: PropsLink | PropsBotao) {
   if (props.href !== undefined) {
     if (props.externo) {
       return (
-        <a href={props.href} target="_blank" rel="noopener noreferrer" className={classes}>
+        <a href={props.href} aria-label={props["aria-label"]} target="_blank" rel="noopener noreferrer" className={classes}>
           {children}
         </a>
       );
     }
     return (
-      <Link href={props.href} className={classes}>
+      <Link href={props.href} aria-label={props["aria-label"]} className={classes}>
         {children}
       </Link>
     );

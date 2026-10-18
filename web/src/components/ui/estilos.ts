@@ -1,11 +1,11 @@
 export const foco =
-  "focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-acento/25";
+  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-acento-forte focus-visible:ring-offset-2 focus-visible:ring-offset-fundo";
 
 export type VarianteBotao = "primario" | "secundario" | "fantasma" | "perigo";
 export type TamanhoBotao = "md" | "sm";
 
 const baseBotao =
-  "inline-flex items-center justify-center gap-1.5 rounded-lg font-medium disabled:opacity-50 disabled:cursor-default";
+  "inline-flex items-center justify-center gap-1.5 rounded-lg disabled:opacity-50 disabled:cursor-default";
 
 const tamanhos: Record<TamanhoBotao, string> = {
   md: "min-h-11 px-4 text-sm",
@@ -13,10 +13,10 @@ const tamanhos: Record<TamanhoBotao, string> = {
 };
 
 const variantes: Record<VarianteBotao, string> = {
-  primario: "bg-acento text-sobre-acento active:bg-acento-forte",
-  secundario: "border border-linha bg-superficie text-tinta active:bg-suave",
-  fantasma: "text-acento-forte active:bg-suave",
-  perigo: "text-erro active:bg-erro/10",
+  primario: "font-semibold bg-acento text-sobre-acento active:bg-acento-forte",
+  secundario: "font-medium border border-linha bg-superficie text-tinta active:bg-suave",
+  fantasma: "font-medium text-acento-forte active:bg-suave",
+  perigo: "font-medium text-erro active:bg-erro/10",
 };
 
 export function classesBotao(

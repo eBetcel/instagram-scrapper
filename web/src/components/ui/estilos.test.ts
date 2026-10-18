@@ -5,6 +5,7 @@ import {
   classesCampo,
   classesChip,
   classesSelo,
+  foco,
 } from "./estilos";
 
 describe("classesCampo", () => {
@@ -74,5 +75,12 @@ describe("classesAviso", () => {
     expect(classesAviso("erro")).toContain("text-erro");
     expect(classesAviso("info")).toContain("text-sucesso");
     expect(classesAviso("sucesso")).toContain("text-sucesso");
+  });
+});
+
+describe("foco", () => {
+  it("usa anel sólido com offset", () => {
+    expect(foco).toContain("ring-acento-forte");
+    expect(foco).toContain("ring-offset-2");
   });
 });
