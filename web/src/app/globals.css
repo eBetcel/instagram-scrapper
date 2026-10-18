@@ -1,5 +1,51 @@
 @import "tailwindcss";
 
-body {
-  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+:root {
+  color-scheme: light dark;
+  --fundo: #faf8f3;
+  --superficie: #fdfbf7;
+  --suave: #f1ebe0;
+  --linha: #e6dfd5;
+  --tinta: #1c1a17;
+  --texto: #3d3a35;
+  --apagado: #6c6860;
+  --acento: #c8613f;
+  --acento-forte: #a64c2e;
+  --erro: #b93c3c;
+  --sucesso: #3f7a52;
+  --sobre-acento: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fundo: #181715;
+    --superficie: #211f1c;
+    --suave: #2a2824;
+    --linha: #35322d;
+    --tinta: #f5f1ea;
+    --texto: #d6d1c8;
+    --apagado: #9e998f;
+    --acento: #de7a58;
+    --acento-forte: #ec9070;
+    --erro: #e57373;
+    --sucesso: #7fbf8f;
+    --sobre-acento: #181715;
+  }
+}
+
+@theme inline {
+  --color-fundo: var(--fundo);
+  --color-superficie: var(--superficie);
+  --color-suave: var(--suave);
+  --color-linha: var(--linha);
+  --color-tinta: var(--tinta);
+  --color-texto: var(--texto);
+  --color-apagado: var(--apagado);
+  --color-acento: var(--acento);
+  --color-acento-forte: var(--acento-forte);
+  --color-erro: var(--erro);
+  --color-sucesso: var(--sucesso);
+  --color-sobre-acento: var(--sobre-acento);
+  --font-serifa: var(--font-fraunces), Georgia, serif;
+  --font-sans: var(--font-inter), system-ui, sans-serif;
 }
