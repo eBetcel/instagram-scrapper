@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { connection } from "next/server";
 import { Suspense } from "react";
-import { Carregando } from "@/components/Carregando";
+import { Carregando } from "@/components/ui/Carregando";
+import { Titulo } from "@/components/ui/Titulo";
+import { Vazio } from "@/components/ui/Vazio";
 import { ListaPorDia } from "@/components/ListaPorDia";
 import { apiServidor } from "@/lib/api-servidor";
 import { intervalo, PERIODOS, type Periodo } from "@/lib/datas";
@@ -33,17 +35,17 @@ async function ConteudoDaAgenda({ searchParams }: { searchParams: Busca }) {
   const grupos = [...meus, ...seguidos];
   if (grupos.length === 0) {
     return (
-      <p className="rounded-lg border border-dashed border-stone-300 p-4 text-sm">
-        <Link href="/grupos" className="font-medium underline">Crie um grupo com os @s que você acompanha</Link>
+      <Vazio>
+        <Link href="/grupos" className="font-medium text-acento-forte underline">Crie um grupo com os @s que você acompanha</Link>
         {" "}e os eventos deles aparecem aqui.
-      </p>
+      </Vazio>
     );
   }
   return (
     <div className="space-y-6">
       <Filtros valores={valores} grupos={grupos} />
       {eventos.length === 0 ? (
-        <p className="text-sm text-stone-500">Nenhum evento neste período.</p>
+        <Vazio>Nenhum evento neste período.</Vazio>
       ) : (
         <ListaPorDia eventos={eventos} />
       )}
@@ -54,7 +56,7 @@ async function ConteudoDaAgenda({ searchParams }: { searchParams: Busca }) {
 export default function Agenda({ searchParams }: PageProps<"/">) {
   return (
     <section className="space-y-4">
-      <h1 className="text-xl font-semibold">Agenda</h1>
+      <Titulo nivel={1}>Agenda</Titulo>
       <Suspense fallback={<Carregando />}>
         <ConteudoDaAgenda searchParams={searchParams} />
       </Suspense>

@@ -8,7 +8,7 @@ export function ListaPorDia({ eventos }: { eventos: Evento[] }) {
     <div className="space-y-6">
       {agruparPorDia(eventos).map(({ dia, eventos }) => (
         <section key={dia} className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-stone-500">{rotuloDia(dia, hoje)}</h2>
+          <h2 className="sticky top-14 z-10 bg-fundo py-2 text-xs font-semibold uppercase tracking-[0.08em] text-apagado">{rotuloDia(dia, hoje)}</h2>
           {eventos.map((e) => <EventoCard key={e.id} evento={e} />)}
         </section>
       ))}
