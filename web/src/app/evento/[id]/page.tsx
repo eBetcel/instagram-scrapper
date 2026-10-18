@@ -1,6 +1,10 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import { Carregando } from "@/components/Carregando";
+import { Botao } from "@/components/ui/Botao";
+import { Cartao } from "@/components/ui/Cartao";
+import { Carregando } from "@/components/ui/Carregando";
+import { Selo } from "@/components/ui/Selo";
+import { Titulo } from "@/components/ui/Titulo";
 import { apiServidor } from "@/lib/api-servidor";
 import { diaDe, FUSO, rotuloDia } from "@/lib/datas";
 import { hora, preco, selos } from "@/lib/formato";
@@ -32,49 +36,54 @@ async function Detalhe({ params }: { params: PageProps<"/evento/[id]">["params"]
     <article className="space-y-5">
       {e.imagem && (
         // eslint-disable-next-line @next/next/no-img-element -- flyer servido pela api, já na mesma origem
-        <img src={e.imagem} alt={`Flyer de ${e.titulo}`} className="w-full rounded-lg object-contain" />
+        <img src={e.imagem} alt={`Flyer de ${e.titulo}`} className="w-full rounded-xl object-contain" />
       )}
       <header className="space-y-1">
-        {selos(e).length > 0 && <p className="text-sm">{selos(e).join("  ")}</p>}
-        <h1 className="text-2xl font-semibold">{e.titulo}</h1>
-        <p className="text-stone-700">{rotuloDia(diaDe(e.inicio), diaDe(new Date()))} · {hora(e)}</p>
+        {selos(e).length > 0 && (
+          <div className="flex flex-wrap gap-1.5">
+            {selos(e).map((s) => <Selo key={s} tom="acento">{s}</Selo>)}
+          </div>
+        )}
+        <Titulo nivel={1} className="break-words">{e.titulo}</Titulo>
+        <p className="text-texto">{rotuloDia(diaDe(e.inicio), diaDe(new Date()))} · {hora(e)}</p>
       </header>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
-        {e.local_nome && <><dt className="text-stone-500">Local</dt><dd>{e.local_nome}</dd></>}
-        {e.endereco && <><dt className="text-stone-500">Endereço</dt><dd>{e.endereco}</dd></>}
-        {e.cidade && <><dt className="text-stone-500">Cidade</dt><dd>{e.cidade}</dd></>}
-        {valor && <><dt className="text-stone-500">Preço</dt><dd>{valor}</dd></>}
-        {e.festival && <><dt className="text-stone-500">Festival</dt><dd>{e.festival}</dd></>}
+      <Cartao className="p-4 text-sm">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
+        {e.local_nome && <><dt className="text-apagado">Local</dt><dd className="break-words text-tinta">{e.local_nome}</dd></>}
+        {e.endereco && <><dt className="text-apagado">Endereço</dt><dd className="break-words text-tinta">{e.endereco}</dd></>}
+        {e.cidade && <><dt className="text-apagado">Cidade</dt><dd className="break-words text-tinta">{e.cidade}</dd></>}
+        {valor && <><dt className="text-apagado">Preço</dt><dd className="break-words text-tinta">{valor}</dd></>}
+        {e.festival && <><dt className="text-apagado">Festival</dt><dd className="break-words text-tinta">{e.festival}</dd></>}
       </dl>
+      </Cartao>
       {e.link_ingresso && (
-        <a href={e.link_ingresso} target="_blank" rel="noopener noreferrer"
-          className="inline-block rounded-md bg-stone-900 px-4 py-2 text-sm font-medium text-white">Ingressos</a>
+        <Botao variante="primario" href={e.link_ingresso} externo className="w-full md:w-auto">Ingressos</Botao>
       )}
       {e.artistas.length > 0 && (
         <section className="space-y-1">
-          <h2 className="font-semibold">Artistas</h2>
-          <p className="text-sm">{e.artistas.join(", ")}</p>
+          <Titulo nivel={2}>Artistas</Titulo>
+          <p className="text-sm text-texto">{e.artistas.join(", ")}</p>
         </section>
       )}
-      {e.descricao && <p className="whitespace-pre-line text-sm">{e.descricao}</p>}
+      {e.descricao && <p className="whitespace-pre-line text-sm text-texto">{e.descricao}</p>}
       <section className="space-y-1">
-        <h2 className="font-semibold">Divulgado por</h2>
+        <Titulo nivel={2}>Divulgado por</Titulo>
         <ul className="space-y-1 text-sm">
           {e.fontes.map((f) => (
             <li key={f.shortcode}>
-              <a href={f.url_instagram} target="_blank" rel="noopener noreferrer" className="text-blue-700 underline">{`@${f.username}`}</a>
-              {f.publicado_em && <span className="text-stone-500"> · {data.format(new Date(f.publicado_em))}</span>}
+              <a href={f.url_instagram} target="_blank" rel="noopener noreferrer" className="text-acento-forte underline underline-offset-2">{`@${f.username}`}</a>
+              {f.publicado_em && <span className="text-apagado"> · {data.format(new Date(f.publicado_em))}</span>}
             </li>
           ))}
         </ul>
       </section>
       {e.revisoes.length > 0 && (
         <section className="space-y-1">
-          <h2 className="font-semibold">Histórico</h2>
+          <Titulo nivel={2}>Histórico</Titulo>
           <ul className="space-y-1 text-sm">
             {e.revisoes.map((r, i) => (
               <li key={i}>
-                <span className="text-stone-500">{data.format(new Date(r.criado_em))}</span>{" "}
+                <span className="text-apagado">{data.format(new Date(r.criado_em))}</span>{" "}
                 {CAMPOS[r.campo] ?? r.campo}: {valorRevisao(r.campo, r.valor_anterior)} → {valorRevisao(r.campo, r.valor_novo)}
               </li>
             ))}
