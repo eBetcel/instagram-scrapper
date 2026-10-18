@@ -15,6 +15,10 @@ cp .env.example .env.local   # API_URL_INTERNA=http://localhost:8010
 npm run dev                  # http://localhost:3000
 ```
 
+Para a carga inicial dos @s novos (coleta, extração e reconciliação) rodam também, em
+terminais separados e com o mesmo `.env` da api: `uv run agenda worker` e
+`uv run agenda worker-reconciliacao`. Sem eles, o @ fica "coletando…" indefinidamente.
+
 O link de login chega no Mailpit (<http://localhost:8025>). `APP_URL` da api deve ser a
 origem deste front (padrão `http://localhost:3000`).
 
