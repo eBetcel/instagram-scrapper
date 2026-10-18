@@ -32,6 +32,7 @@ async function Detalhe({ params }: { params: PageProps<"/evento/[id]">["params"]
   const { id } = await params;
   const e = await apiServidor<EventoDetalhe>(`/api/eventos/${encodeURIComponent(id)}`);
   const valor = preco(e);
+  const temDetalhes = Boolean(e.local_nome || e.endereco || e.cidade || valor || e.festival);
   return (
     <article className="space-y-5">
       {e.imagem && (
@@ -47,6 +48,7 @@ async function Detalhe({ params }: { params: PageProps<"/evento/[id]">["params"]
         <Titulo nivel={1} className="break-words">{e.titulo}</Titulo>
         <p className="text-texto">{rotuloDia(diaDe(e.inicio), diaDe(new Date()))} · {hora(e)}</p>
       </header>
+      {temDetalhes && (
       <Cartao className="p-4 text-sm">
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2">
         {e.local_nome && <><dt className="text-apagado">Local</dt><dd className="break-words text-tinta">{e.local_nome}</dd></>}
@@ -56,6 +58,7 @@ async function Detalhe({ params }: { params: PageProps<"/evento/[id]">["params"]
         {e.festival && <><dt className="text-apagado">Festival</dt><dd className="break-words text-tinta">{e.festival}</dd></>}
       </dl>
       </Cartao>
+      )}
       {e.link_ingresso && (
         <Botao variante="primario" href={e.link_ingresso} externo className="w-full md:w-auto">Ingressos</Botao>
       )}
