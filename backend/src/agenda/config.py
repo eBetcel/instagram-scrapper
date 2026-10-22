@@ -33,9 +33,6 @@ class Settings(BaseSettings):
     s3_bucket: str = "flyers"
     s3_access_key: str = "agenda"
     s3_secret_key: str = "agenda-secret"
-    chave_sessao: str = ""  # chave Fernet das sessões do scraper
-    intervalo_coleta_horas: int = 6
-    limite_requisicoes_conta_hora: int = 20
 
 
 class ConfigApi(BaseSettings):

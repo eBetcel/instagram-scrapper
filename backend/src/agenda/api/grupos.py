@@ -13,7 +13,6 @@ from agenda.api.deps import deps_api, sessao_db, usuario_atual, usuario_opcional
 from agenda.api.esquemas import GrupoDetalhe, GrupoSaida, LoteSaida, PerfilNoGrupo, ResultadoPerfil
 from agenda.models import Grupo, GrupoPerfil, GrupoSeguidor, Perfil, Usuario
 from agenda.extracao.regras import FUSO
-from agenda.jobs import reativar_ou_enfileirar
 from agenda.texto import normalizar_username, slugificar
 
 DIAS_PUBLICOS = timedelta(days=30)
@@ -96,7 +95,7 @@ class LoteEntrada(BaseModel):
 
 
 def _incluir_perfil(s: Session, g: Grupo, u: Usuario, bruto: str, limite: int) -> tuple[PerfilNoGrupo, bool]:
-    """Põe o @ no grupo (e enfileira a coleta se nunca foi coletado). Devolve (perfil, já estava)."""
+    """Põe o @ no grupo. Devolve (perfil, já estava)."""
     username = normalizar_username(bruto)
     if username is None:
         raise HTTPException(422, "@ inválido: use letras, dígitos, '.' e '_', até 30 caracteres")
@@ -112,8 +111,6 @@ def _incluir_perfil(s: Session, g: Grupo, u: Usuario, bruto: str, limite: int) -
         s.add(perfil)
         s.flush()
     s.add(GrupoPerfil(grupo_id=g.id, perfil_id=perfil.id))
-    if perfil.ultima_coleta_em is None and perfil.status == "ativo":
-        reativar_ou_enfileirar(s, "coletar_perfil", {"perfil_id": perfil.id}, f"coletar:{perfil.id}")
     s.flush()
     return PerfilNoGrupo(username=username, status=status_perfil(perfil)), False
 

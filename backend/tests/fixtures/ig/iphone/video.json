@@ -1,9 +1,0 @@
-{"pk": "3460000000000000002", "id": "3460000000000000002_9000", "code": "IVID001", "taken_at": 1760020000,
- "media_type": 2, "product_type": "clips", "has_liked": false, "like_count": 7, "comment_count": 0,
- "caption": {"pk": "1800000000000000002", "text": "Teaser do festival", "created_at": 1760020000},
- "timeline_pinned_user_ids": ["9000"],
- "user": {"pk": "9000", "username": "casa.cultural", "full_name": "Casa Cultural", "is_private": false,
-          "profile_pic_url": "https://cdn.example/pp.jpg"},
- "image_versions2": {"candidates": [{"width": 1080, "height": 1920, "url": "https://cdn.example/iv_capa.jpg"}]},
- "video_versions": [{"type": 101, "width": 720, "height": 1280, "url": "https://cdn.example/iv.mp4"}],
- "video_duration": 15.2, "view_count": 120}

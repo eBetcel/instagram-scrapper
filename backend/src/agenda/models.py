@@ -41,26 +41,9 @@ class Perfil(Base):
     username: Mapped[str] = mapped_column(Text, unique=True)
     status: Mapped[str] = mapped_column(String, server_default="ativo", default="ativo")
     ultima_coleta_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    proxima_coleta_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     criado_em: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Cadastrado pela CLI: coletado mesmo sem estar em grupo.
     fixo: Mapped[bool] = mapped_column(Boolean, server_default=text("false"), default=False)
-
-
-class ContaColeta(Base):
-    __tablename__ = "contas_coleta"
-    __table_args__ = (
-        CheckConstraint(_in("status", ("ativa", "bloqueada", "desativada")), name="ck_contas_coleta_status"),
-    )
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    usuario_ig: Mapped[str] = mapped_column(Text, unique=True)
-    sessao_criptografada: Mapped[str | None] = mapped_column(Text)
-    status: Mapped[str] = mapped_column(String, server_default="ativa", default="ativa")
-    bloqueada_ate: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    ultimo_uso_em: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    usos_janela: Mapped[int] = mapped_column(Integer, server_default="0", default=0)
-    janela_inicio: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class Post(Base):

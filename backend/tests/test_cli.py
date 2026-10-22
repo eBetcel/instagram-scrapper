@@ -1,9 +1,7 @@
 """CLI de admin. Os comandos abrem sessões por `agenda.cli.fabrica_sessoes`, que os
 testes apontam para o banco do testcontainer (com commit real e TRUNCATE depois)."""
 
-import pickle
 from datetime import UTC, datetime, timedelta
-from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select, text
@@ -11,12 +9,11 @@ from sqlalchemy.orm import sessionmaker
 from typer.testing import CliRunner
 
 from agenda import cli
-from agenda.coleta.pool import decifrar_sessao
 from agenda.jobs import enfileirar
-from agenda.models import ContaColeta, Evento, EventoFonte, Job, Perfil, Post
+from agenda.models import Evento, EventoFonte, Job, Perfil, Post
 
 runner = CliRunner()
-TABELAS = "convites, revisoes_evento, evento_fontes, eventos, posts, perfis, jobs, contas_coleta"
+TABELAS = "convites, revisoes_evento, evento_fontes, eventos, posts, perfis, jobs"
 
 
 @pytest.fixture
@@ -46,9 +43,7 @@ def test_perfil_adicionar_normaliza_username(fabrica):
     assert r.exit_code == 0, r.output
     assert usernames(fabrica) == ["casa.azul_sp"]
     with fabrica() as s:
-        p = s.scalars(select(Perfil)).one()
-        assert p.proxima_coleta_em is not None
-        assert p.proxima_coleta_em <= datetime.now(UTC)
+        assert s.scalars(select(Perfil)).one().fixo
 
 
 def test_perfil_adicionar_e_idempotente(fabrica):
@@ -72,61 +67,7 @@ def test_perfil_listar(fabrica):
     r = invocar("perfil-listar")
     assert r.exit_code == 0
     assert "casa" in r.output and "bar" in r.output
-
-
-def test_coletar_enfileira_e_adianta_job_existente(fabrica):
-    invocar("perfil-adicionar", "casa")
-    invocar("perfil-adicionar", "bar")
-    with fabrica.begin() as s:
-        p = s.scalars(select(Perfil).where(Perfil.username == "casa")).one()
-        p.proxima_coleta_em = datetime.now(UTC) + timedelta(hours=5)
-        enfileirar(s, "coletar_perfil", {"perfil_id": p.id}, chave=f"coletar:{p.id}",
-                   executar_em=datetime.now(UTC) + timedelta(hours=5))
-    r = invocar("coletar", "--perfil", "@Casa")
-    assert r.exit_code == 0, r.output
-    with fabrica() as s:
-        jobs = s.scalars(select(Job).where(Job.tipo == "coletar_perfil")).all()
-        assert len(jobs) == 1  # só o do perfil pedido, sem duplicar
-        assert jobs[0].executar_em <= datetime.now(UTC)
-        p = s.scalars(select(Perfil).where(Perfil.username == "casa")).one()
-        assert p.proxima_coleta_em <= datetime.now(UTC)
-
-
-def test_coletar_sem_perfil_enfileira_todos_os_ativos(fabrica):
-    invocar("perfil-adicionar", "casa")
-    invocar("perfil-adicionar", "bar")
-    assert invocar("coletar").exit_code == 0
-    with fabrica() as s:
-        assert len(s.scalars(select(Job).where(Job.tipo == "coletar_perfil")).all()) == 2
-
-
-def test_coletar_perfil_inexistente_falha(fabrica):
-    assert invocar("coletar", "--perfil", "nao_existe").exit_code != 0
-
-
-def test_conta_adicionar_cifra_sessao(fabrica, tmp_path, monkeypatch):
-    from cryptography.fernet import Fernet
-
-    chave = Fernet.generate_key().decode()
-    monkeypatch.setattr(cli, "get_settings", lambda: SimpleNamespace(chave_sessao=chave))
-    arq = tmp_path / "sessao"
-    arq.write_bytes(pickle.dumps({"sessionid": "abc", "csrftoken": "t"}))
-    r = invocar("conta-adicionar", "bot_coleta", "--sessao-arquivo", str(arq))
-    assert r.exit_code == 0, r.output
-    with fabrica() as s:
-        conta = s.scalars(select(ContaColeta)).one()
-        assert conta.usuario_ig == "bot_coleta"
-        assert "abc" not in conta.sessao_criptografada
-        assert decifrar_sessao(conta.sessao_criptografada, chave) == {
-            "sessionid": "abc", "csrftoken": "t"}
-
-
-def test_conta_adicionar_sem_chave_falha(fabrica, tmp_path, monkeypatch):
-    monkeypatch.setattr(cli, "get_settings", lambda: SimpleNamespace(chave_sessao=""))
-    arq = tmp_path / "sessao"
-    arq.write_bytes(pickle.dumps({"sessionid": "abc"}))
-    r = invocar("conta-adicionar", "bot", "--sessao-arquivo", str(arq))
-    assert r.exit_code != 0
+    assert "próxima coleta" not in r.output
 
 
 def criar_post(fabrica, extracao=None, status="erro"):
@@ -199,31 +140,6 @@ def test_post_reprocessar_job_pendente_diz_que_ja_havia(fabrica):
     assert "já havia" in r.output
 
 
-def test_coletar_revive_job_em_erro_e_conta_so_efetivos(fabrica):
-    invocar("perfil-adicionar", "casa")
-    invocar("perfil-adicionar", "bar")
-    with fabrica.begin() as s:
-        casa = s.scalars(select(Perfil).where(Perfil.username == "casa")).one()
-        bar = s.scalars(select(Perfil).where(Perfil.username == "bar")).one()
-        enfileirar(s, "coletar_perfil", {"perfil_id": casa.id}, chave=f"coletar:{casa.id}")
-        enfileirar(s, "coletar_perfil", {"perfil_id": bar.id}, chave=f"coletar:{bar.id}")
-        for j in s.scalars(select(Job)).all():
-            if j.payload["perfil_id"] == casa.id:
-                j.status, j.tentativas, j.erro_msg = "erro", 5, "boom"
-                j.executar_em = datetime.now(UTC) + timedelta(hours=1)
-            else:  # já vencido: nada a fazer
-                j.executar_em = datetime.now(UTC) - timedelta(minutes=1)
-    r = invocar("coletar")
-    assert r.exit_code == 0, r.output
-    assert "1 de 2" in r.output
-    with fabrica() as s:
-        jobs = {j.payload["perfil_id"]: j for j in s.scalars(select(Job)).all()}
-        assert len(jobs) == 2
-        j = jobs[casa.id]
-        assert (j.status, j.tentativas, j.erro_msg) == ("pendente", 0, None)
-        assert j.executar_em <= datetime.now(UTC)
-
-
 def test_post_reprocessar_inexistente_e_etapa_invalida(fabrica):
     assert invocar("post-reprocessar", "NAO").exit_code != 0
     criar_post(fabrica)
@@ -275,23 +191,23 @@ def test_eventos_filtra_por_cidade_e_periodo(fabrica):
     assert invocar("eventos", "--de", "ontem").exit_code != 0
 
 
-# --- build_deps valida CHAVE_SESSAO cedo ---------------------------------------
+# --- build_deps ----------------------------------------------------------------
 
 
-@pytest.mark.parametrize("chave", ["", "nao-e-fernet"])
-def test_build_deps_recusa_chave_sessao_vazia_ou_invalida(chave, capsys):
+def test_build_deps_recusa_sem_openai_api_key(capsys):
     import typer
 
     from agenda.cli import build_deps
     from agenda.config import Settings
 
-    settings = Settings(
-        openai_api_key="sk-teste", openai_modelo_extracao="x", openai_modelo_reconciliacao="y",
-        chave_sessao=chave,
-    )
+    settings = Settings(openai_api_key="", openai_modelo_extracao="x", openai_modelo_reconciliacao="y")
     with pytest.raises(typer.Exit):
         build_deps(settings)
-    assert "CHAVE_SESSAO" in capsys.readouterr().err
+    assert "OPENAI_API_KEY" in capsys.readouterr().err
+
+
+def test_worker_padrao_so_extrai():
+    assert cli.TIPOS_PADRAO == "extrair_post"
 
 
 def _duplicatas(fabrica):

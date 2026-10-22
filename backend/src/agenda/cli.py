@@ -4,9 +4,7 @@ Os comandos abrem sessões por `fabrica_sessoes()` (os testes a substituem). Só
 comandos de worker chamam `build_deps`, então os demais funcionam sem chave da OpenAI.
 """
 
-import pickle
 from datetime import UTC, date, datetime, time, timedelta
-from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -18,13 +16,13 @@ from agenda import texto
 from agenda.db import get_session_factory, session_scope
 from agenda.extracao.regras import FUSO
 from agenda.jobs import reativar_ou_enfileirar
-from agenda.models import ContaColeta, Evento, EventoFonte, Job, Perfil, Post
+from agenda.models import Evento, EventoFonte, Perfil, Post
 from agenda.pipeline import Dependencias
 
 app = typer.Typer(help="Administração do núcleo de dados da agenda cultural.", no_args_is_help=True)
 
 # Instagram: letras, dígitos, '.' e '_' (até 30 caracteres).
-TIPOS_PADRAO = "coletar_perfil,extrair_post"
+TIPOS_PADRAO = "extrair_post"
 
 
 def fabrica_sessoes() -> sessionmaker[Session]:
@@ -49,39 +47,21 @@ def normalizar_username(bruto: str) -> str:
     return username
 
 
-def _validar_chave_sessao(chave: str) -> None:
-    """Falha já na partida se CHAVE_SESSAO não for uma chave Fernet (e não na 1ª coleta)."""
-    from cryptography.fernet import Fernet
-
-    if not chave:
-        raise _falhar("CHAVE_SESSAO não configurada (chave Fernet; veja .env.example).")
-    try:
-        Fernet(chave.encode())
-    except ValueError as exc:
-        raise _falhar(f"CHAVE_SESSAO inválida (esperada uma chave Fernet): {exc}") from exc
-
-
 def build_deps(settings: Settings) -> Dependencias:
     """Monta as dependências reais do pipeline a partir das Settings."""
     from openai import OpenAI
 
-    from agenda.coleta.instaloader_coletor import InstaloaderColetor
-    from agenda.coleta.pool import PoolContas
     from agenda.extracao.extrator import OpenAIExtrator
     from agenda.reconciliacao.decisao import OpenAIReconciliador
     from agenda.storage import S3Storage
 
     if not settings.openai_api_key:
         raise _falhar("OPENAI_API_KEY não configurada.")
-    _validar_chave_sessao(settings.chave_sessao)
     client = OpenAI(api_key=settings.openai_api_key)
-    pool = PoolContas(get_session_factory(), settings.limite_requisicoes_conta_hora)
     return Dependencias(
-        coletor=InstaloaderColetor(pool),
         storage=S3Storage.from_settings(settings),
         extrator=OpenAIExtrator(client, settings.openai_modelo_extracao),
         reconciliador=OpenAIReconciliador(client, settings.openai_modelo_reconciliacao),
-        intervalo_coleta_horas=settings.intervalo_coleta_horas,
     )
 
 
@@ -93,7 +73,7 @@ def perfil_adicionar(username: str) -> None:
         if s.scalar(select(Perfil.id).where(Perfil.username == username)) is not None:
             typer.echo(f"Perfil @{username} já existe.")
             return
-        s.add(Perfil(username=username, proxima_coleta_em=func.now(), fixo=True))
+        s.add(Perfil(username=username, fixo=True))
     typer.echo(f"Perfil @{username} adicionado.")
 
 
@@ -102,81 +82,8 @@ def perfil_listar() -> None:
     """Lista os perfis cadastrados."""
     with _sessao() as s:
         perfis = s.scalars(select(Perfil).order_by(Perfil.username)).all()
-        linhas = [
-            (p.username, p.status, _fmt_dt(p.ultima_coleta_em), _fmt_dt(p.proxima_coleta_em))
-            for p in perfis
-        ]
-    _tabela(["perfil", "status", "última coleta", "próxima coleta"], linhas)
-
-
-@app.command("conta-adicionar")
-def conta_adicionar(
-    usuario_ig: str,
-    sessao_arquivo: Annotated[Path, typer.Option("--sessao-arquivo", help="Arquivo de sessão do instaloader.")],
-) -> None:
-    """Cadastra uma conta de coleta com a sessão criptografada.
-
-    O arquivo é o gerado por `instaloader --login X` / `save_session_to_file`: um
-    pickle do dict de cookies. É lido com `pickle.load` diretamente (é o que o próprio
-    instaloader faz); use apenas arquivos que você mesmo gerou.
-    """
-    from agenda.coleta.pool import cifrar_sessao
-
-    chave = get_settings().chave_sessao
-    if not chave:
-        raise _falhar("CHAVE_SESSAO não configurada (chave Fernet; veja .env.example).")
-    try:
-        with open(sessao_arquivo, "rb") as f:
-            cookies = pickle.load(f)  # noqa: S301 - arquivo local do próprio admin
-    except Exception as exc:  # noqa: BLE001
-        raise _falhar(f"Não foi possível ler {sessao_arquivo}: {exc}") from exc
-    if not isinstance(cookies, dict) or not cookies:
-        raise _falhar("Arquivo de sessão inválido: esperado um dict de cookies não vazio.")
-    usuario_ig = usuario_ig.strip().removeprefix("@")
-    token = cifrar_sessao(cookies, chave)
-    with _sessao() as s:
-        conta = s.scalars(select(ContaColeta).where(ContaColeta.usuario_ig == usuario_ig)).one_or_none()
-        if conta is None:
-            s.add(ContaColeta(usuario_ig=usuario_ig, sessao_criptografada=token))
-            typer.echo(f"Conta {usuario_ig} adicionada.")
-        else:
-            conta.sessao_criptografada = token
-            conta.status = "ativa"
-            conta.bloqueada_ate = None
-            typer.echo(f"Conta {usuario_ig} já existia: sessão atualizada e conta reativada.")
-
-
-@app.command("coletar")
-def coletar(
-    perfil: Annotated[str | None, typer.Option(help="Username; sem ele, todos os perfis ativos.")] = None,
-) -> None:
-    """Enfileira a coleta imediatamente."""
-    with _sessao() as s:
-        consulta = select(Perfil).where(Perfil.status == "ativo").order_by(Perfil.id)
-        if perfil is not None:
-            consulta = select(Perfil).where(Perfil.username == normalizar_username(perfil))
-        perfis = s.scalars(consulta).all()
-        if not perfis:
-            raise _falhar("Nenhum perfil encontrado.")
-        agora = datetime.now(UTC)
-        efetivos = 0
-        for p in perfis:
-            p.proxima_coleta_em = agora
-            chave = f"coletar:{p.id}"
-            r = reativar_ou_enfileirar(s, "coletar_perfil", {"perfil_id": p.id}, chave, executar_em=agora)
-            if r == "existente":  # job vivo: adianta se estiver pendente e ainda não vencido
-                pendente = s.scalars(
-                    select(Job).where(
-                        Job.tipo == "coletar_perfil", Job.chave == chave, Job.status == "pendente",
-                        Job.executar_em > agora,
-                    )
-                ).one_or_none()
-                if pendente is not None:
-                    pendente.executar_em = agora
-                    efetivos += 1
-            else:
-                efetivos += 1
-    typer.echo(f"Coleta enfileirada ou adiantada para {efetivos} de {len(perfis)} perfil(is).")
+        linhas = [(p.username, p.status, _fmt_dt(p.ultima_coleta_em)) for p in perfis]
+    _tabela(["perfil", "status", "última coleta"], linhas)
 
 
 @app.command("convite-criar")

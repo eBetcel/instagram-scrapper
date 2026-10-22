@@ -9,31 +9,24 @@ registra o erro. O worker de reconciliação é um único processo com
 import logging
 import time
 from collections.abc import Callable
-from datetime import timedelta
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session, sessionmaker
 
-from agenda.coleta.base import SemContasDisponiveis
-from agenda.coleta.servico import agendar_coletas
-from agenda.config import get_settings
 from agenda.db import session_scope
 from agenda.extracao.extrator import RespostaInvalida
 from agenda.jobs import (
-    adiar,
     concluir,
     falhar,
     falhar_definitivo,
     recuperar_travados,
     reservar,
 )
-from agenda.models import Job, Perfil, Post
+from agenda.models import Job, Post
 from agenda.pipeline import HANDLERS, Dependencias, somar_uso
 
 log = logging.getLogger(__name__)
 
 INTERVALO_MANUTENCAO_SEGUNDOS = 5 * 60
-ESPERA_SEM_CONTAS = timedelta(hours=1)  # quando o pool não sabe quando uma conta volta
 
 
 def _manutencao(factory: sessionmaker[Session] | None, deps: Dependencias, tipos: list[str]) -> None:
@@ -41,8 +34,6 @@ def _manutencao(factory: sessionmaker[Session] | None, deps: Dependencias, tipos
         recuperados = recuperar_travados(s)
         if recuperados:
             log.warning("%d job(s) travado(s) devolvido(s) à fila", recuperados)
-        if "coletar_perfil" in tipos:
-            agendar_coletas(s, deps.relogio())
 
 
 def _reservar(factory: sessionmaker[Session] | None, tipos: list[str]) -> int | None:
@@ -62,16 +53,6 @@ def _marcar_post_erro(s: Session, job: Job, erro: str) -> Post | None:
     return post
 
 
-def _adiar_proxima_coleta(s: Session, job: Job, deps: Dependencias) -> None:
-    """Coleta esgotada: o perfil só volta a ser devido no próximo intervalo, para o
-    agendador (que reativa jobs em 'erro') não repetir a falha a cada 5 minutos."""
-    perfil = s.get(Perfil, (job.payload or {}).get("perfil_id"))
-    if perfil is None:
-        return
-    horas = deps.intervalo_coleta_horas or get_settings().intervalo_coleta_horas
-    perfil.proxima_coleta_em = deps.relogio() + timedelta(hours=horas)
-
-
 def _executar(factory: sessionmaker[Session] | None, deps: Dependencias, job_id: int) -> None:
     try:
         with session_scope(factory) as s:
@@ -84,13 +65,6 @@ def _executar(factory: sessionmaker[Session] | None, deps: Dependencias, job_id:
                 return
             handler(s, job, deps)
             concluir(s, job)
-    except SemContasDisponiveis as exc:
-        # Falta de conta não é falha do job: reagenda sem gastar tentativa (R31).
-        with session_scope(factory) as s:
-            job = s.get(Job, job_id)
-            ate = exc.disponivel_em or func.now() + ESPERA_SEM_CONTAS
-            adiar(s, job, ate, f"{type(exc).__name__}: {exc}")
-            log.error("job %d (%s) adiado: nenhuma conta de coleta disponível", job_id, job.tipo)
     except RespostaInvalida as exc:
         erro = f"{type(exc).__name__}: {exc}"
         with session_scope(factory) as s:
@@ -109,8 +83,6 @@ def _executar(factory: sessionmaker[Session] | None, deps: Dependencias, job_id:
             falhar(s, job, erro)
             if job.status == "erro":
                 _marcar_post_erro(s, job, erro)
-                if job.tipo == "coletar_perfil":
-                    _adiar_proxima_coleta(s, job, deps)
                 log.error(
                     "job %d (%s) terminou em erro após %d tentativa(s): %s",
                     job_id, job.tipo, job.tentativas, erro,
@@ -130,8 +102,7 @@ def rodar_worker(
 ) -> int:
     """Reserva e executa jobs dos `tipos`; devolve quantos processou.
 
-    Ao iniciar e a cada 5 minutos devolve à fila jobs travados e, se `tipos`
-    incluir `coletar_perfil`, agenda as coletas devidas. Com `uma_vez`, retorna
+    Ao iniciar e a cada 5 minutos devolve à fila jobs travados. Com `uma_vez`, retorna
     quando não houver job pronto; sem ele, dorme `intervalo_ocioso` e tenta de novo.
     """
     processados = 0

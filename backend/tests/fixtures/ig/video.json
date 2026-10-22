@@ -1,4 +1,0 @@
-{"__typename": "GraphVideo", "shortcode": "VID0001", "taken_at_timestamp": 1760003600, "is_video": true,
- "display_url": "https://cdn.example/vid_capa.jpg", "video_url": "https://cdn.example/vid.mp4",
- "edge_media_to_caption": {"edges": [{"node": {"text": "Teaser do festival"}}]},
- "pinned_for_users": [{"id": "123", "username": "perfil"}]}

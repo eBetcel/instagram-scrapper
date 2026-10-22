@@ -20,14 +20,14 @@ def _jobs(api):
         return [(j.tipo, j.chave) for j in s.scalars(select(Job))]
 
 
-def test_adicionar_normaliza_e_enfileira_coleta(api):
+def test_adicionar_normaliza_e_cria_perfil_sem_enfileirar(api):
     logar(api)
     slug = _grupo(api)
     r = _add(api, slug, "@CasaX")
     assert r.status_code == 201 and r.json() == {"username": "casax", "status": "coletando"}
     with api.fabrica() as s:
-        pid = s.scalar(select(Perfil.id).where(Perfil.username == "casax"))
-    assert _jobs(api) == [("coletar_perfil", f"coletar:{pid}")]
+        assert s.scalar(select(Perfil.id).where(Perfil.username == "casax")) is not None
+    assert _jobs(api) == []  # a coleta de perfis novos é feita em lote pelo worker
     assert api.cliente.get(f"/api/grupos/{slug}").json()["perfis"] == [{"username": "casax", "status": "coletando"}]
 
 
@@ -37,18 +37,16 @@ def test_adicionar_de_novo_nao_duplica(api):
     _add(api, slug, "casax")
     r = _add(api, slug, "casax")
     assert r.status_code == 200
-    assert len(_jobs(api)) == 1
     assert api.cliente.get(f"/api/grupos/{slug}").json()["n_perfis"] == 1
 
 
-def test_perfil_ja_coletado_nao_enfileira(api):
+def test_perfil_ja_coletado_aparece_ativo(api):
     with api.fabrica() as s:
         s.add(Perfil(username="velho", ultima_coleta_em=datetime.now(UTC)))
         s.commit()
     logar(api)
     r = _add(api, _grupo(api), "velho")
     assert r.status_code == 201 and r.json()["status"] == "ativo"
-    assert _jobs(api) == []
 
 
 def test_perfil_privado_aparece_sinalizado(api):
@@ -101,7 +99,7 @@ def _lote(api, slug, usernames, cliente=None):
     return (cliente or api.cliente).post(f"/api/grupos/{slug}/perfis/lote", json={"usernames": usernames})
 
 
-def test_lote_adiciona_varios_e_enfileira_so_os_novos(api):
+def test_lote_adiciona_varios_sem_enfileirar(api):
     with api.fabrica() as s:
         s.add(Perfil(username="velho", ultima_coleta_em=datetime.now(UTC)))
         s.commit()
@@ -114,7 +112,7 @@ def test_lote_adiciona_varios_e_enfileira_so_os_novos(api):
         {"username": "velho", "status": "ativo", "erro": None},
         {"username": "casax", "status": "coletando", "erro": None},
     ]
-    assert len(_jobs(api)) == 1
+    assert _jobs(api) == []
     assert api.cliente.get(f"/api/grupos/{slug}").json()["n_perfis"] == 2
 
 

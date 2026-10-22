@@ -1,4 +1,4 @@
-"""Handlers dos jobs do pipeline: coletar_perfil -> extrair_post -> reconciliar_post.
+"""Handlers dos jobs do pipeline: extrair_post -> reconciliar_post.
 
 Cada handler roda na transação do worker (junto com `concluir`) e nunca faz commit.
 Os handlers são idempotentes: trabalho já feito é ignorado.
@@ -12,8 +12,7 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from agenda.coleta.base import Coletor
-from agenda.coleta.servico import baixar_url, coletar_perfil
+from agenda.coleta.servico import baixar_url
 from agenda.extracao.extrator import Extrator, Uso
 from agenda.extracao.regras import agrupar_festivais, filtrar_validos
 from agenda.extracao.schema import EventoExtraido, ExtracaoPost
@@ -36,13 +35,11 @@ def _agora_utc() -> datetime:
 
 @dataclass
 class Dependencias:
-    coletor: Coletor
     storage: Storage
     extrator: Extrator
     reconciliador: Reconciliador
     baixar: Callable[[str], bytes] = baixar_url
     relogio: Callable[[], datetime] = field(default=_agora_utc)
-    intervalo_coleta_horas: int | None = None  # None: Settings.intervalo_coleta_horas
 
 
 def somar_uso(post: Post, uso: Uso | None) -> None:
@@ -59,18 +56,6 @@ def _post(s: Session, job: Job) -> Post:
     if post is None:
         raise ValueError(f"post {job.payload['post_id']} não existe")
     return post
-
-
-def tratar_coletar_perfil(s: Session, job: Job, deps: Dependencias) -> None:
-    coletar_perfil(
-        s,
-        job.payload["perfil_id"],
-        deps.coletor,
-        deps.storage,
-        agora=deps.relogio(),
-        baixar=deps.baixar,
-        intervalo_horas=deps.intervalo_coleta_horas,
-    )
 
 
 def tratar_extrair_post(s: Session, job: Job, deps: Dependencias) -> None:
@@ -139,7 +124,6 @@ def tratar_reconciliar_post(s: Session, job: Job, deps: Dependencias) -> None:
 
 
 HANDLERS: dict[str, Callable[[Session, Job, Dependencias], None]] = {
-    "coletar_perfil": tratar_coletar_perfil,
     "extrair_post": tratar_extrair_post,
     "reconciliar_post": tratar_reconciliar_post,
 }

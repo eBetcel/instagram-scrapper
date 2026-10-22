@@ -15,7 +15,7 @@ from agenda.storage import MemoriaStorage
 
 TABELAS = (
     "grupo_seguidores, grupo_perfis, grupos, sessoes, tokens_login, convites, usuarios, "
-    "revisoes_evento, evento_fontes, eventos, posts, perfis, jobs, contas_coleta"
+    "revisoes_evento, evento_fontes, eventos, posts, perfis, jobs"
 )
 
 
