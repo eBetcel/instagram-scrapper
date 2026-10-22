@@ -135,15 +135,11 @@ def classificar_erro(mensagem: str) -> Literal["privado", "inexistente"] | None:
     """Classifica a mensagem guardada em ``ResultadoLote.erros``.
 
     Apify não dá sinal confiável de perfil privado ("Empty or private data" é
-    ambíguo), então só mensagens que dizem claramente "private" viram "privado".
+    ambíguo), então "privado" nunca é devolvido por este caminho.
     """
     m = mensagem.lower()
     if "does not exist" in m or m.strip() == "not_found":
         return "inexistente"
-    if "empty or private" in m:
-        return None
-    if "private" in m:
-        return "privado"
     return None
 
 
@@ -200,6 +196,11 @@ def converter_itens(itens: list[dict], usernames: list[str]) -> ResultadoLote:
             continue
         if shortcode in vistos:
             continue
+        try:
+            publicado_em = datetime.fromisoformat(timestamp).astimezone(UTC)
+        except (ValueError, TypeError):
+            log.warning("post %s descartado: timestamp inválido %r", shortcode, timestamp)
+            continue
         vistos.add(shortcode)
         imagens = item.get("images") or (
             [item["displayUrl"]] if item.get("displayUrl") else []
@@ -208,7 +209,7 @@ def converter_itens(itens: list[dict], usernames: list[str]) -> ResultadoLote:
             PostColetado(
                 shortcode=shortcode,
                 legenda=item.get("caption") or "",
-                publicado_em=datetime.fromisoformat(timestamp).astimezone(UTC),
+                publicado_em=publicado_em,
                 urls_imagens=list(imagens),
                 perfil=perfil,
             )

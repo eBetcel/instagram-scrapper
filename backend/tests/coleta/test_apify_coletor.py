@@ -112,7 +112,7 @@ def test_mesmo_shortcode_duas_vezes_fica_uma():
 def test_classificar_erro():
     assert classificar_erro("Profile does not exist") == "inexistente"
     assert classificar_erro("not_found") == "inexistente"
-    assert classificar_erro("This account is private") == "privado"
+    assert classificar_erro("This account is private") is None
     assert classificar_erro("Empty or private data for provided input") is None
     assert classificar_erro("algo estranho") is None
 
@@ -164,3 +164,15 @@ def test_fake_coletor_filtra_e_registra():
     assert isinstance(r, ResultadoLote)
     assert r.posts == [p1] and r.erros == {"c": "y"}
     assert f.chamadas == [(["a", "c"], "1 days", 1)]
+
+
+def test_timestamp_invalido_nao_derruba_o_lote(caplog):
+    itens = [
+        _post(shortCode="X", timestamp="lixo"),
+        _post(shortCode="Y", timestamp=12345),
+        _post(shortCode="OK"),
+    ]
+    with caplog.at_level(logging.WARNING):
+        r = converter_itens(itens, ["festivalmada"])
+    assert [p.shortcode for p in r.posts] == ["OK"]
+    assert sum(x.levelno == logging.WARNING for x in caplog.records) == 2
