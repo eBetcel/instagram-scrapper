@@ -96,6 +96,7 @@ def test_um_lote_por_horario_mesmo_com_varias_passadas(session):
     [job] = _jobs(session)
     assert job.payload == {"lote_id": lote.id}
     assert job.chave == f"lote:{lote.id}"
+    assert job.max_tentativas == 3
     # próximo horário: novo lote
     assert len(agendar_lotes(session, sp(2, 18, 1), HORARIOS)) == 1
     assert [l.horario for l in _lotes(session)] == [sp(2, 8), sp(2, 18)]
@@ -159,6 +160,7 @@ def test_lote_de_novos_imediato_com_30_dias_e_limite_50(session):
     [job] = _jobs(session)
     assert job.payload == {"lote_id": lote.id}
     assert job.chave == f"lote:{lote.id}"
+    assert job.max_tentativas == 3
     assert _lotes(session, "agendado") == []
 
 

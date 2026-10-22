@@ -8,10 +8,17 @@ Assinatura do transporte (injetável, para testes sem rede):
 O transporte devolve o status também para 4xx/5xx; erros de rede propagam.
 O token vai só no cabeçalho ``Authorization: Bearer``, nunca na URL nem nas
 mensagens de erro.
+
+``aguardar`` faz long-polling com ``waitForFinish=50`` e o transporte real espera
+até 90 s pela resposta (folga acima da espera do servidor). Falhas transitórias
+durante o polling (timeout/erro de rede, HTTP 5xx ou 429) não derrubam a espera:
+o mesmo run continua sendo consultado até o prazo de 15 min; ao estourar o prazo,
+o run é abortado antes de levantar ``ExecucaoFalhou``.
 """
 
 from __future__ import annotations
 
+import http.client
 import json
 import logging
 import time
@@ -30,6 +37,9 @@ Transporte = Callable[[str, str, "dict | None", "dict[str, str]"], "tuple[int, A
 BASE = "https://api.apify.com"
 _PAGINA = 1000
 _FINAIS_RUIM = {"FAILED", "TIMED-OUT", "ABORTED"}
+ESPERA_SERVIDOR_SEGUNDOS = 50  # waitForFinish do long-polling
+TIMEOUT_TRANSPORTE_SEGUNDOS = 90  # bem acima da espera do servidor
+PAUSA_APOS_FALHA_SEGUNDOS = 5
 
 
 class ApifyRecusou(Exception):
@@ -40,6 +50,27 @@ class ExecucaoFalhou(Exception):
     """A execução do actor terminou sem sucesso ou estourou o timeout."""
 
 
+class RespostaHttp(RuntimeError):
+    """Resposta HTTP de erro (>= 400, exceto 401/402/403) ou sem JSON."""
+
+    def __init__(self, mensagem: str, status: int) -> None:
+        super().__init__(mensagem)
+        self.status = status
+
+    @property
+    def transitoria(self) -> bool:
+        return self.status >= 500 or self.status == 429
+
+
+class ExecucaoTerminou(ExecucaoFalhou):
+    """A execução terminou com FAILED, TIMED-OUT ou ABORTED (``status``)."""
+
+    def __init__(self, run_id: str, status: str) -> None:
+        super().__init__(f"execução {run_id} terminou com {status}")
+        self.run_id = run_id
+        self.status = status
+
+
 def transporte_urllib(
     metodo: str, url: str, corpo: dict | None, cabecalhos: dict[str, str]
 ) -> tuple[int, Any]:
@@ -47,7 +78,7 @@ def transporte_urllib(
     cab = {**cabecalhos, "Content-Type": "application/json"}
     req = urllib.request.Request(url, data=dados, headers=cab, method=metodo)
     try:
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=TIMEOUT_TRANSPORTE_SEGUNDOS) as resp:
             status, bruto = resp.status, resp.read()
     except urllib.error.HTTPError as e:
         status, bruto = e.code, e.read()
@@ -65,11 +96,13 @@ class ApifyCliente:
         *,
         transporte: Transporte = transporte_urllib,
         relogio: Callable[[], float] = time.monotonic,
+        dormir: Callable[[float], None] = time.sleep,
     ) -> None:
         self._token = token
         self._actor_id = actor_id
         self._transporte = transporte
         self._relogio = relogio
+        self._dormir = dormir
 
     def _chamar(self, metodo: str, caminho: str, corpo: dict | None = None) -> Any:
         cab = {"Authorization": f"Bearer {self._token}"}
@@ -77,15 +110,15 @@ class ApifyCliente:
         if status in (401, 402, 403):
             raise ApifyRecusou(f"Apify recusou {metodo} {caminho}: HTTP {status}")
         if status >= 400:
-            raise RuntimeError(f"Apify {metodo} {caminho} falhou: HTTP {status}")
+            raise RespostaHttp(f"Apify {metodo} {caminho} falhou: HTTP {status}", status)
         if dados is None:
-            raise RuntimeError(f"Apify {metodo} {caminho}: resposta sem JSON")
+            raise RespostaHttp(f"Apify {metodo} {caminho}: resposta sem JSON", status)
         return dados
 
     def _campo(self, dados: Any, chaves: tuple[str, ...], metodo: str, caminho: str):
         atual = dados
         for k in chaves:
-            if not isinstance(atual, dict) or k not in atual:
+            if not isinstance(atual, dict) or atual.get(k) is None:
                 raise RuntimeError(
                     f"Apify {metodo} {caminho}: resposta sem o campo {'.'.join(chaves)}"
                 )
@@ -100,21 +133,46 @@ class ApifyCliente:
     def aguardar(
         self, run_id: str, *, timeout: timedelta = timedelta(minutes=15)
     ) -> str:
+        """Espera o run terminar e devolve o dataset; consulta sempre o mesmo run.
+
+        Falhas transitórias de consulta (rede, timeout, 5xx, 429) são toleradas até o
+        prazo. Status final ruim levanta ``ExecucaoTerminou``; prazo estourado aborta o
+        run e levanta ``ExecucaoFalhou``.
+        """
         inicio = self._relogio()
+        caminho = f"/v2/actor-runs/{run_id}?waitForFinish={ESPERA_SERVIDOR_SEGUNDOS}"
+        status = "desconhecido"
         while True:
-            caminho = f"/v2/actor-runs/{run_id}?waitForFinish=60"
-            dados = self._chamar("GET", caminho)
-            status = self._campo(dados, ("data", "status"), "GET", caminho)
-            if status == "SUCCEEDED":
-                return self._campo(
-                    dados, ("data", "defaultDatasetId"), "GET", caminho
-                )
-            if status in _FINAIS_RUIM:
-                raise ExecucaoFalhou(f"execução {run_id} terminou com {status}")
+            try:
+                dados = self._chamar("GET", caminho)
+            except (OSError, http.client.HTTPException) as e:
+                log.warning("consulta ao run %s falhou (%s); tentando de novo", run_id, e)
+                self._dormir(PAUSA_APOS_FALHA_SEGUNDOS)
+            except RespostaHttp as e:
+                if not e.transitoria:
+                    raise
+                log.warning("consulta ao run %s falhou (%s); tentando de novo", run_id, e)
+                self._dormir(PAUSA_APOS_FALHA_SEGUNDOS)
+            else:
+                status = self._campo(dados, ("data", "status"), "GET", caminho)
+                if status == "SUCCEEDED":
+                    return self._campo(dados, ("data", "defaultDatasetId"), "GET", caminho)
+                if status in _FINAIS_RUIM:
+                    raise ExecucaoTerminou(run_id, status)
             if self._relogio() - inicio > timeout.total_seconds():
+                self._abortar_sem_falhar(run_id)
                 raise ExecucaoFalhou(
-                    f"timeout aguardando a execução {run_id} (último status {status})"
+                    f"timeout aguardando a execução {run_id} (último status {status}); abortada"
                 )
+
+    def abortar(self, run_id: str) -> None:
+        self._chamar("POST", f"/v2/actor-runs/{run_id}/abort")
+
+    def _abortar_sem_falhar(self, run_id: str) -> None:
+        try:
+            self.abortar(run_id)
+        except Exception as e:  # noqa: BLE001 - o timeout é o erro que importa
+            log.warning("não consegui abortar a execução %s: %s", run_id, e)
 
     def itens(self, dataset_id: str) -> list[dict]:
         todos: list[dict] = []
@@ -222,17 +280,40 @@ class ApifyColetor:
         self._cliente = cliente
 
     def coletar(
-        self, usernames: list[str], *, janela: str, limite: int
+        self,
+        usernames: list[str],
+        *,
+        janela: str,
+        limite: int,
+        run_id: str | None = None,
+        ao_iniciar: Callable[[str], None] | None = None,
     ) -> ResultadoLote:
-        entrada = {
-            "username": list(usernames),
-            "onlyPostsNewerThan": janela,
-            "resultsLimit": limite,
-            "skipPinnedPosts": True,
-            "dataDetailLevel": "basicData",
-        }
-        run_id = self._cliente.iniciar(entrada)
-        dataset_id = self._cliente.aguardar(run_id)
+        """Coleta os ``usernames`` numa execução do actor.
+
+        Com ``run_id`` (execução de uma tentativa anterior), não inicia outra: aguarda
+        a existente (se já terminou, volta na hora) e lê o dataset, sem custo extra. Só
+        se ela terminou com FAILED/ABORTED/TIMED-OUT inicia uma nova. Toda execução nova
+        é avisada a ``ao_iniciar`` antes da espera, para quem chama gravá-la.
+        """
+        dataset_id = None
+        if run_id is not None:
+            try:
+                dataset_id = self._cliente.aguardar(run_id)
+            except ExecucaoTerminou as e:
+                log.warning("execução %s terminou com %s; iniciando outra", run_id, e.status)
+                run_id = None
+        if run_id is None:
+            entrada = {
+                "username": list(usernames),
+                "onlyPostsNewerThan": janela,
+                "resultsLimit": limite,
+                "skipPinnedPosts": True,
+                "dataDetailLevel": "basicData",
+            }
+            run_id = self._cliente.iniciar(entrada)
+            if ao_iniciar is not None:
+                ao_iniciar(run_id)
+            dataset_id = self._cliente.aguardar(run_id)
         resultado = converter_itens(self._cliente.itens(dataset_id), usernames)
         resultado.run_ids = [run_id]
         return resultado

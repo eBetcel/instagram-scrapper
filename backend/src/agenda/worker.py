@@ -6,6 +6,7 @@ registra o erro. O worker de reconciliação é um único processo com
 `tipos=["reconciliar_post"]`.
 """
 
+import dataclasses
 import logging
 import time
 from collections.abc import Callable
@@ -136,6 +137,8 @@ def rodar_worker(
     está nos `tipos`, cria os lotes de coleta devidos (`agendar_lotes`). Com `uma_vez`, retorna
     quando não houver job pronto; sem ele, dorme `intervalo_ocioso` e tenta de novo.
     """
+    if session_factory is not None and deps.session_factory is None:
+        deps = dataclasses.replace(deps, session_factory=session_factory)
     processados = 0
     ultima_manutencao: float | None = None
     while True:

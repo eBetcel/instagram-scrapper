@@ -299,6 +299,7 @@ def test_coletar_perfil_novo_cria_lote_de_30_dias(fabrica):
         job = s.scalars(select(Job).where(Job.tipo == "coletar_lote")).one()
         assert job.payload == {"lote_id": lote.id}
         assert job.chave == f"lote:{lote.id}"
+        assert job.max_tentativas == 3
 
 
 def test_coletar_sem_perfil_inclui_todos_os_acompanhados(fabrica):

@@ -10,10 +10,15 @@ from datetime import UTC, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from agenda.coleta.base import Coletor
-from agenda.coleta.servico import HORARIOS_PADRAO, baixar_url, coletar_lote
+from agenda.coleta.servico import (
+    HORARIOS_PADRAO,
+    baixar_url,
+    coletar_lote,
+    gravador_de_run_ids,
+)
 from agenda.extracao.extrator import Extrator, Uso
 from agenda.extracao.regras import agrupar_festivais, filtrar_validos
 from agenda.extracao.schema import EventoExtraido, ExtracaoPost
@@ -44,6 +49,9 @@ class Dependencias:
     baixar: Callable[[str], bytes] = baixar_url
     relogio: Callable[[], datetime] = field(default=_agora_utc)
     horarios_coleta: list[time] = field(default_factory=lambda: list(HORARIOS_PADRAO))
+    # Fábrica das transações próprias do handler (run ids da Apify, R16). O worker
+    # preenche com a sua; None = a fábrica padrão de `agenda.db`.
+    session_factory: sessionmaker[Session] | None = None
 
 
 def somar_uso(post: Post, uso: Uso | None) -> None:
@@ -128,14 +136,16 @@ def tratar_reconciliar_post(s: Session, job: Job, deps: Dependencias) -> None:
 
 
 def tratar_coletar_lote(s: Session, job: Job, deps: Dependencias) -> None:
+    lote_id = job.payload["lote_id"]
     coletar_lote(
         s,
-        job.payload["lote_id"],
+        lote_id,
         deps.coletor,
         deps.storage,
         agora=deps.relogio(),
         baixar=deps.baixar,
         preco_por_post=deps.preco_por_post,
+        gravar_run_id=gravador_de_run_ids(deps.session_factory, lote_id),
     )
 
 

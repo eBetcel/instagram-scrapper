@@ -443,7 +443,7 @@ class ColetorQuebrado:
         self.exc = exc
         self.chamadas = 0
 
-    def coletar(self, usernames, *, janela, limite):
+    def coletar(self, usernames, *, janela, limite, **kw):
         self.chamadas += 1
         raise self.exc
 
@@ -476,18 +476,57 @@ def test_execucao_falhou_repete_e_marca_lote_erro_ao_esgotar(fabrica, caplog):
     assert lote.status == "pendente"
 
     with caplog.at_level(logging.ERROR, logger="agenda.worker"):
-        for _ in range(4):
+        for _ in range(2):
             reagendar_jobs(fabrica)
             rodar(fabrica, d, COLETA)
-    assert coletor.chamadas == 5
+    assert coletor.chamadas == 3
     with fabrica() as s:
         job = s.scalars(select(Job).where(Job.tipo == "coletar_lote")).one()
-    assert (job.status, job.tentativas) == ("erro", 5)
+    assert (job.status, job.tentativas, job.max_tentativas) == ("erro", 3, 3)
     [lote] = os_lotes(fabrica)  # nenhum lote de novos novo: o em erro bloqueia por 1 h
     assert lote.status == "erro"
     assert "FAILED" in lote.erro_msg
     assert lote.concluido_em is not None
     assert [r for r in caplog.records if r.levelno == logging.ERROR]
+
+
+class ColetorQueFalhaNoSegundoBloco(FakeColetor):
+    """Inicia (e avisa) um run por bloco; na 1ª tentativa, o 2º bloco falha depois de
+    iniciar o run (ex.: dataset/armazenamento fora do ar)."""
+
+    def __init__(self):
+        super().__init__([])
+        self.falhou = False
+
+    def coletar(self, usernames, *, janela, limite, run_id=None, ao_iniciar=None):
+        r = super().coletar(usernames, janela=janela, limite=limite, run_id=run_id,
+                            ao_iniciar=ao_iniciar)
+        if len(self.runs_recebidos) == 2 and not self.falhou:
+            self.falhou = True
+            raise RuntimeError("storage fora do ar")
+        return r
+
+
+def test_run_ids_sobrevivem_ao_rollback_e_a_retentativa_os_reaproveita(fabrica):
+    with fabrica.begin() as s:
+        s.add_all([Perfil(username=f"p{i:03d}", fixo=True) for i in range(60)])
+    coletor = ColetorQueFalhaNoSegundoBloco()
+    d = deps(coletor=coletor)
+
+    rodar(fabrica, d, COLETA)
+    [lote] = os_lotes(fabrica)
+    assert lote.status == "pendente"  # transação do handler desfeita...
+    assert lote.run_ids == ["fake-1", "fake-2"]  # ...mas os runs ficaram gravados
+    with fabrica() as s:
+        job = s.scalars(select(Job).where(Job.tipo == "coletar_lote")).one()
+    assert (job.status, job.tentativas) == ("pendente", 1)
+
+    reagendar_jobs(fabrica)
+    rodar(fabrica, d, COLETA)
+    assert coletor.runs_recebidos == [None, None, "fake-1", "fake-2"]  # nenhum run novo
+    [lote] = os_lotes(fabrica)
+    assert lote.status == "concluido"
+    assert lote.run_ids == ["fake-1", "fake-2"]
 
 
 # --- worker: agendamento e recuperação (R12, R14) ------------------------------

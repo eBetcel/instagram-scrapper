@@ -1,5 +1,7 @@
 import json
+import socket
 import threading
+import urllib.error
 import urllib.request
 from datetime import timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -10,6 +12,7 @@ from agenda.coleta.apify import (
     ApifyCliente,
     ApifyRecusou,
     ExecucaoFalhou,
+    ExecucaoTerminou,
     transporte_urllib,
 )
 
@@ -25,13 +28,17 @@ class Falso:
 
     def __call__(self, metodo, url, corpo, cabecalhos):
         self.chamadas.append((metodo, url, corpo, cabecalhos))
-        return self.respostas.pop(0)
+        r = self.respostas.pop(0)
+        if isinstance(r, BaseException):
+            raise r
+        return r
 
 
-def cliente(respostas, relogio=None):
+def cliente(respostas, relogio=None, dormir=None):
     t = Falso(respostas)
     kw = {"relogio": relogio} if relogio else {}
-    return ApifyCliente(TOKEN, "user~actor", transporte=t, **kw), t
+    c = ApifyCliente(TOKEN, "user~actor", transporte=t, dormir=dormir or (lambda s: None), **kw)
+    return c, t
 
 
 def run(status, ds="ds1"):
@@ -52,21 +59,112 @@ def test_aguardar_ate_sucesso_devolve_dataset():
     c, t = cliente([run("RUNNING"), run("RUNNING"), run("SUCCEEDED", "dsX")])
     assert c.aguardar("r1") == "dsX"
     assert len(t.chamadas) == 3
-    assert t.chamadas[0][1] == "https://api.apify.com/v2/actor-runs/r1?waitForFinish=60"
+    assert t.chamadas[0][1] == "https://api.apify.com/v2/actor-runs/r1?waitForFinish=50"
 
 
 @pytest.mark.parametrize("final", ["FAILED", "TIMED-OUT", "ABORTED"])
 def test_aguardar_falha_levanta_execucao_falhou(final):
     c, _ = cliente([run("RUNNING"), run(final)])
-    with pytest.raises(ExecucaoFalhou, match=final):
+    with pytest.raises(ExecucaoTerminou, match=final) as e:
+        c.aguardar("r1")
+    assert isinstance(e.value, ExecucaoFalhou)
+    assert e.value.status == final
+
+
+def test_aguardar_passa_do_timeout_aborta_a_execucao_e_levanta():
+    tempos = iter([0.0, 100.0, 2000.0])
+    c, t = cliente(
+        [run("RUNNING"), run("RUNNING"), (200, {"data": {"status": "ABORTING"}})],
+        relogio=lambda: next(tempos),
+    )
+    with pytest.raises(ExecucaoFalhou, match="timeout") as e:
+        c.aguardar("r1", timeout=timedelta(minutes=15))
+    assert not isinstance(e.value, ExecucaoTerminou)
+    metodo, url, _, _ = t.chamadas[-1]
+    assert (metodo, url) == ("POST", "https://api.apify.com/v2/actor-runs/r1/abort")
+
+
+def test_aguardar_timeout_levanta_mesmo_se_abortar_falhar():
+    tempos = iter([0.0, 2000.0])
+    c, _ = cliente([run("RUNNING"), (500, {})], relogio=lambda: next(tempos))
+    with pytest.raises(ExecucaoFalhou, match="timeout"):
+        c.aguardar("r1", timeout=timedelta(minutes=15))
+
+
+def test_abortar_posta_no_run():
+    c, t = cliente([(200, {"data": {"id": "r1", "status": "ABORTING"}})])
+    c.abortar("r1")
+    assert t.chamadas[0][:2] == ("POST", "https://api.apify.com/v2/actor-runs/r1/abort")
+
+
+@pytest.mark.parametrize(
+    "falha",
+    [
+        TimeoutError("timed out"),
+        socket.timeout("read timed out"),
+        urllib.error.URLError("conexão recusada"),
+        ConnectionResetError("reset"),
+        (503, {}),
+        (500, None),
+        (429, {"error": {}}),
+    ],
+    ids=["timeout", "socket-timeout", "urlerror", "reset", "503", "500", "429"],
+)
+def test_aguardar_tolera_falha_transitoria_e_continua_no_mesmo_run(falha):
+    dormidas = []
+    c, t = cliente([run("RUNNING"), falha, run("SUCCEEDED", "dsX")], dormir=dormidas.append)
+    assert c.aguardar("r1") == "dsX"
+    assert [ch[1] for ch in t.chamadas] == [
+        "https://api.apify.com/v2/actor-runs/r1?waitForFinish=50"
+    ] * 3
+    assert all(ch[0] == "GET" for ch in t.chamadas)
+    assert len(dormidas) == 1
+
+
+def test_aguardar_falhas_transitorias_ate_o_prazo_abortam_e_levantam():
+    tempos = iter([0.0, 100.0, 2000.0])
+    c, t = cliente(
+        [TimeoutError("x"), (502, {}), (200, {"data": {}})], relogio=lambda: next(tempos)
+    )
+    with pytest.raises(ExecucaoFalhou, match="timeout"):
+        c.aguardar("r1", timeout=timedelta(minutes=15))
+    assert t.chamadas[-1][:2] == ("POST", "https://api.apify.com/v2/actor-runs/r1/abort")
+
+
+def test_aguardar_recusa_401_nao_e_transitoria():
+    c, _ = cliente([(401, {})])
+    with pytest.raises(ApifyRecusou):
         c.aguardar("r1")
 
 
-def test_aguardar_passa_do_timeout_levanta_execucao_falhou():
-    tempos = iter([0.0, 100.0, 2000.0])
-    c, _ = cliente([run("RUNNING")] * 5, relogio=lambda: next(tempos))
-    with pytest.raises(ExecucaoFalhou, match="timeout"):
-        c.aguardar("r1", timeout=timedelta(minutes=15))
+def test_sucesso_sem_dataset_levanta_erro_claro():
+    c, _ = cliente([(200, {"data": {"id": "r1", "status": "SUCCEEDED", "defaultDatasetId": None}})])
+    with pytest.raises(RuntimeError, match="defaultDatasetId"):
+        c.aguardar("r1")
+
+
+def test_transporte_urllib_espera_mais_que_o_wait_for_finish(monkeypatch):
+    vistos = {}
+
+    class R:
+        status = 200
+
+        def read(self):
+            return b"{}"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def urlopen(req, timeout):
+        vistos["timeout"] = timeout
+        return R()
+
+    monkeypatch.setattr(urllib.request, "urlopen", urlopen)
+    transporte_urllib("GET", "http://x/y", None, {})
+    assert vistos["timeout"] >= 50 + 30
 
 
 def test_itens_pagina_ate_acabar():

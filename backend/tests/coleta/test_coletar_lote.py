@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
+from agenda.coleta.apify import ApifyColetor
 from agenda.coleta.base import FakeColetor, PostColetado, ResultadoLote
 from agenda.coleta.servico import coletar_lote
 from agenda.models import Job, LoteColeta, Perfil, Post
@@ -38,10 +39,11 @@ def _lote(s, perfis=("casa",), **kw):
     return lote
 
 
-def _rodar(s, lote, coletor, storage=None, baixar=_baixar):
+def _rodar(s, lote, coletor, storage=None, baixar=_baixar, gravar_run_id=None):
     storage = storage if storage is not None else MemoriaStorage()
     return coletar_lote(
-        s, lote.id, coletor, storage, agora=AGORA, baixar=baixar, preco_por_post=PRECO
+        s, lote.id, coletor, storage, agora=AGORA, baixar=baixar, preco_por_post=PRECO,
+        gravar_run_id=gravar_run_id,
     )
 
 
@@ -160,8 +162,8 @@ def test_lote_registra_posts_posts_novos_custo_run_ids_e_concluido(session):
     session.flush()
 
     class ColetorComRuns(FakeColetor):
-        def coletar(self, usernames, *, janela, limite):
-            r = super().coletar(usernames, janela=janela, limite=limite)
+        def coletar(self, usernames, *, janela, limite, **kw):
+            r = super().coletar(usernames, janela=janela, limite=limite, **kw)
             return ResultadoLote(posts=r.posts, erros=r.erros, run_ids=["run1"])
 
     coletor = ColetorComRuns([_post("velho"), _post("n1"), _post("n2")])
@@ -200,9 +202,79 @@ def test_falha_do_coletor_propaga(session):
     lote = _lote(session)
 
     class Quebrado:
-        def coletar(self, usernames, *, janela, limite):
+        def coletar(self, usernames, *, janela, limite, **kw):
             raise RuntimeError("apify caiu")
 
     with pytest.raises(RuntimeError):
         _rodar(session, lote, Quebrado())
-    assert lote.status == "executando"
+    assert lote.status == "pendente"  # nada gravado no lote antes de coletar
+
+
+def test_cada_run_novo_e_gravado_assim_que_inicia(session):
+    lote = _lote(session, perfis=[f"p{i:03d}" for i in range(60)])
+    gravados = []
+    _rodar(session, lote, FakeColetor([]), gravar_run_id=lambda i, r: gravados.append((i, r)))
+    assert gravados == [(0, "fake-1"), (1, "fake-2")]
+    assert lote.run_ids == ["fake-1", "fake-2"]
+
+
+def test_run_existente_de_cada_bloco_e_passado_ao_coletor(session):
+    lote = _lote(session, perfis=[f"p{i:03d}" for i in range(60)])
+    lote.run_ids = ["rA"]
+    coletor = FakeColetor([])
+    gravados = []
+    _rodar(session, lote, coletor, gravar_run_id=lambda i, r: gravados.append((i, r)))
+    assert coletor.runs_recebidos == ["rA", None]
+    assert gravados == [(1, "fake-1")]
+    assert lote.run_ids == ["rA", "fake-1"]
+
+
+class ClienteApifyFalso:
+    """Cliente falso da Apify: um run por `iniciar`; `itens` do 2º run falha uma vez."""
+
+    def __init__(self):
+        self.iniciados = []
+        self.aguardados = []
+        self.falhar_itens_de = {"run-2"}
+
+    def iniciar(self, entrada):
+        run_id = f"run-{len(self.iniciados) + 1}"
+        self.iniciados.append((run_id, entrada["username"]))
+        return run_id
+
+    def aguardar(self, run_id):
+        self.aguardados.append(run_id)
+        return f"ds:{run_id}"
+
+    def itens(self, dataset_id):
+        run_id = dataset_id.removeprefix("ds:")
+        if run_id in self.falhar_itens_de:
+            self.falhar_itens_de.discard(run_id)
+            raise RuntimeError("Apify GET dataset falhou: HTTP 503")
+        return []
+
+
+def test_retentativa_apos_falha_no_segundo_bloco_reaproveita_os_runs(session):
+    lote = _lote(session, perfis=[f"p{i:03d}" for i in range(60)])
+    cliente = ClienteApifyFalso()
+    coletor = ApifyColetor(cliente)
+    gravados: dict[int, str] = {}  # o que a transação própria deixou gravado
+
+    def gravar(i, run_id):
+        gravados[i] = run_id
+
+    tentativa = session.begin_nested()
+    with pytest.raises(RuntimeError, match="503"):
+        _rodar(session, lote, coletor, gravar_run_id=gravar)
+    tentativa.rollback()  # o worker desfaz a transação do handler
+    assert gravados == {0: "run-1", 1: "run-2"}
+
+    lote = session.get(LoteColeta, lote.id)
+    lote.run_ids = [gravados[i] for i in sorted(gravados)]
+    session.flush()
+    _rodar(session, lote, coletor, gravar_run_id=gravar)
+
+    assert [r for r, _ in cliente.iniciados] == ["run-1", "run-2"]  # nenhum run a mais
+    assert cliente.aguardados == ["run-1", "run-2", "run-1", "run-2"]
+    assert lote.status == "concluido"
+    assert lote.run_ids == ["run-1", "run-2"]

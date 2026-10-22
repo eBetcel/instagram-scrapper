@@ -1,6 +1,8 @@
 """Serviço de coleta.
 
-Nenhuma função faz commit: a transação pertence a quem chama.
+Nenhuma função faz commit: a transação pertence a quem chama. A exceção é
+`gravador_de_run_ids`, que grava o id de cada execução da Apify numa transação
+própria, para sobreviver ao rollback do handler (R16).
 """
 
 import logging
@@ -12,11 +14,12 @@ from decimal import Decimal
 
 from sqlalchemy import exists, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, sessionmaker
 
 from agenda.coleta.apify import classificar_erro
 from agenda.coleta.base import Coletor, PostColetado, ResultadoLote
 from agenda.config import HORARIOS_COLETA_PADRAO, parse_horarios
+from agenda.db import session_scope
 from agenda.extracao.regras import FUSO
 from agenda.jobs import enfileirar
 from agenda.models import GrupoPerfil, LoteColeta, Perfil, Post
@@ -35,6 +38,8 @@ JANELA_NOVOS = "30 days"
 ESPERA_NOVOS = timedelta(hours=1)
 # Chave fixa do pg_advisory_xact_lock que serializa `agendar_lotes` entre workers.
 LOCK_AGENDAMENTO = 7_310_002
+# Tentativas de um job `coletar_lote` (cada uma reaproveita as execuções já iniciadas, R16).
+MAX_TENTATIVAS_LOTE = 3
 
 
 def baixar_url(url: str) -> bytes:
@@ -100,7 +105,8 @@ def criar_lotes_imediatos(
     s.flush()
     for lote in lotes:
         enfileirar(
-            s, "coletar_lote", {"lote_id": lote.id}, chave=f"lote:{lote.id}", executar_em=agora
+            s, "coletar_lote", {"lote_id": lote.id}, chave=f"lote:{lote.id}", executar_em=agora,
+            max_tentativas=MAX_TENTATIVAS_LOTE,
         )
     return lotes
 
@@ -163,7 +169,10 @@ def agendar_lotes(
             criados.append(lote.id)
 
     for lote_id in criados:
-        enfileirar(s, "coletar_lote", {"lote_id": lote_id}, chave=f"lote:{lote_id}")
+        enfileirar(
+            s, "coletar_lote", {"lote_id": lote_id}, chave=f"lote:{lote_id}",
+            max_tentativas=MAX_TENTATIVAS_LOTE,
+        )
     return criados
 
 
@@ -186,6 +195,25 @@ def _novos_bloqueado(s: Session, agora: datetime) -> bool:
     )
 
 
+def gravador_de_run_ids(
+    factory: sessionmaker[Session] | None, lote_id: int
+) -> Callable[[int, str], None]:
+    """Callback `(bloco, run_id)` que grava `lote.run_ids[bloco] = run_id` numa
+    transação própria, já confirmada ao voltar (sobrevive ao rollback do handler)."""
+
+    def gravar(bloco: int, run_id: str) -> None:
+        with session_scope(factory) as s:
+            lote = s.get(LoteColeta, lote_id, with_for_update=True)
+            if lote is None:
+                return
+            ids = list(lote.run_ids or [])
+            ids.extend([""] * (bloco + 1 - len(ids)))
+            ids[bloco] = run_id
+            lote.run_ids = ids
+
+    return gravar
+
+
 def coletar_lote(
     s: Session,
     lote_id: int,
@@ -195,38 +223,54 @@ def coletar_lote(
     agora: datetime,
     baixar: Callable[[str], bytes] = baixar_url,
     preco_por_post: Decimal,
+    gravar_run_id: Callable[[int, str], None] | None = None,
 ) -> int:
     """Coleta e grava os posts do lote; devolve quantos posts novos foram salvos.
 
-    Falhas do coletor propagam (o worker decide); o lote fica `executando`.
+    Os perfis vão em blocos de 50 (pela ordem de `lote.perfis`); o bloco `i` usa a
+    execução `lote.run_ids[i]` de uma tentativa anterior, se houver (R16). Cada
+    execução nova é passada a `gravar_run_id(i, run_id)` logo depois de iniciada.
+
+    Falhas propagam (o worker decide): a transação de quem chama é desfeita, o lote
+    volta a ler `pendente` (só os `run_ids` gravados por `gravar_run_id` ficam) e o
+    worker o marca `erro` quando o job termina sem retentativa (R12).
     """
     lote = s.get(LoteColeta, lote_id)
     if lote is None:
         raise ValueError(f"lote {lote_id} não existe")
     if lote.status == "concluido":
         return 0
-    lote.status = "executando"
-    s.flush()
+    # O lote não é alterado antes de coletar: `gravar_run_id` atualiza a mesma linha
+    # noutra conexão e esperaria por um lock desta transação.
 
     perfis = {
         p.username: p
         for p in s.scalars(select(Perfil).where(Perfil.username.in_(lote.perfis)))
     }
-    usernames = []
     for u in lote.perfis:
-        if u in perfis:
-            usernames.append(u)
-        else:
+        if u not in perfis:
             log.warning("lote %s: perfil @%s não existe; ignorado", lote.id, u)
+    usernames = [u for u in lote.perfis if u in perfis]
 
+    anteriores = list(lote.run_ids or [])
     resultado = ResultadoLote()
-    for i in range(0, len(usernames), PERFIS_POR_EXECUCAO):
+    run_ids: list[str] = []
+    for bloco, i in enumerate(range(0, len(lote.perfis), PERFIS_POR_EXECUCAO)):
+        # Blocos pela ordem de `lote.perfis` (estável entre tentativas), sem os removidos.
+        parte_perfis = [u for u in lote.perfis[i : i + PERFIS_POR_EXECUCAO] if u in perfis]
+        anterior = anteriores[bloco] if bloco < len(anteriores) and anteriores[bloco] else None
+        if not parte_perfis:
+            run_ids.append(anterior or "")
+            continue
+        ao_iniciar = (lambda r, b=bloco: gravar_run_id(b, r)) if gravar_run_id else None
         parte = coletor.coletar(
-            usernames[i : i + PERFIS_POR_EXECUCAO], janela=lote.janela, limite=lote.limite
+            parte_perfis, janela=lote.janela, limite=lote.limite,
+            run_id=anterior, ao_iniciar=ao_iniciar,
         )
         resultado.posts.extend(parte.posts)
         resultado.erros.update(parte.erros)
-        resultado.run_ids.extend(parte.run_ids)
+        run_ids.append(parte.run_ids[0] if parte.run_ids else anterior or "")
+    resultado.run_ids = run_ids
 
     novos = 0
     vistos: set[str] = set()

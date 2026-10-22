@@ -3,7 +3,15 @@ import logging
 from datetime import UTC, datetime
 from pathlib import Path
 
-from agenda.coleta.apify import ApifyColetor, classificar_erro, converter_itens
+import pytest
+
+from agenda.coleta.apify import (
+    ApifyColetor,
+    ExecucaoFalhou,
+    ExecucaoTerminou,
+    classificar_erro,
+    converter_itens,
+)
 from agenda.coleta.base import FakeColetor, PostColetado, ResultadoLote
 
 FIX = Path(__file__).parent.parent / "fixtures" / "apify"
@@ -118,20 +126,27 @@ def test_classificar_erro():
 
 
 class ClienteFalso:
-    def __init__(self, itens):
+    """``finais``: run_id -> exceção que ``aguardar`` levanta para ele."""
+
+    def __init__(self, itens, finais=None):
         self._itens = itens
+        self._finais = finais or {}
         self.entradas = []
+        self.eventos = []
 
     def iniciar(self, entrada):
         self.entradas.append(entrada)
+        self.eventos.append(("iniciar", "run1"))
         return "run1"
 
     def aguardar(self, run_id):
-        assert run_id == "run1"
-        return "ds1"
+        self.eventos.append(("aguardar", run_id))
+        if run_id in self._finais:
+            raise self._finais[run_id]
+        return f"ds-{run_id}"
 
     def itens(self, dataset_id):
-        assert dataset_id == "ds1"
+        self.eventos.append(("itens", dataset_id))
         return self._itens
 
 
@@ -154,6 +169,55 @@ def test_coletor_devolve_run_ids():
     r = ApifyColetor(c).coletar(["festivalmada"], janela="30 days", limite=3)
     assert r.run_ids == ["run1"]
     assert [p.shortcode for p in r.posts] == ["AAA"]
+
+
+def test_coletor_avisa_o_run_novo_antes_de_aguardar():
+    c = ClienteFalso([_post()])
+    avisados = []
+
+    def ao_iniciar(run_id):
+        avisados.append(run_id)
+        assert c.eventos == [("iniciar", "run1")]  # ainda não aguardou
+
+    r = ApifyColetor(c).coletar(
+        ["festivalmada"], janela="30 days", limite=3, ao_iniciar=ao_iniciar
+    )
+    assert avisados == ["run1"]
+    assert r.run_ids == ["run1"]
+
+
+def test_coletor_reaproveita_run_existente_sem_iniciar_outro():
+    c = ClienteFalso([_post()])
+    avisados = []
+    r = ApifyColetor(c).coletar(
+        ["festivalmada"], janela="30 days", limite=3, run_id="rA", ao_iniciar=avisados.append
+    )
+    assert c.entradas == []
+    assert avisados == []
+    assert c.eventos == [("aguardar", "rA"), ("itens", "ds-rA")]
+    assert r.run_ids == ["rA"]
+    assert [p.shortcode for p in r.posts] == ["AAA"]
+
+
+@pytest.mark.parametrize("final", ["FAILED", "ABORTED", "TIMED-OUT"])
+def test_coletor_troca_run_existente_que_terminou_mal(final):
+    c = ClienteFalso([_post()], finais={"rA": ExecucaoTerminou("rA", final)})
+    avisados = []
+    r = ApifyColetor(c).coletar(
+        ["festivalmada"], janela="30 days", limite=3, run_id="rA", ao_iniciar=avisados.append
+    )
+    assert c.eventos == [
+        ("aguardar", "rA"), ("iniciar", "run1"), ("aguardar", "run1"), ("itens", "ds-run1"),
+    ]
+    assert avisados == ["run1"]
+    assert r.run_ids == ["run1"]
+
+
+def test_coletor_nao_inicia_outro_run_se_o_existente_estourou_o_prazo():
+    c = ClienteFalso([], finais={"rA": ExecucaoFalhou("timeout aguardando rA; abortada")})
+    with pytest.raises(ExecucaoFalhou, match="timeout"):
+        ApifyColetor(c).coletar(["festivalmada"], janela="30 days", limite=3, run_id="rA")
+    assert c.entradas == []
 
 
 def test_fake_coletor_filtra_e_registra():
