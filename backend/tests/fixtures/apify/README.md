@@ -16,17 +16,20 @@ o erro `no_items` é descrito pela API como "vazio ou privado", sem distinguir o
 
 ## (a) `onlyPostsNewerThan` aceita horas?
 
-Sim, a API aceitou `"12 hours"` sem erro de validação (HTTP 201). Como o perfil não teve posts nas últimas 12 h,
-a resposta foi um único item de erro `no_items` (e nenhum post). Ou seja: janela vazia NÃO vem como lista vazia,
-vem como item com `error: "no_items"`.
+Sim, a API aceitou `"12 hours"` sem erro de validação (HTTP 201). A resposta foi um único item de erro `no_items`
+(nenhum post). Janela vazia NÃO vem como lista vazia, vem como item com `error: "no_items"`.
+
+Ressalva: a filtragem por horas NÃO está confirmada. Não havia post dentro das últimas 12 h, então não há controle
+positivo; a checagem "só vieram posts das últimas 12 h" foi satisfeita vacuamente (zero posts). Só se sabe que o
+valor é aceito sem erro de validação.
 
 ## (b) Que campo identifica a entrada de origem?
 
-- Posts normais: **nenhum**. Não há `inputUrl` nem `username` nos posts; só `ownerUsername`.
-  Exemplo: `ownerUsername: "jazznobardenazare"`. Atenção: o dono pode ser outro perfil que não o pedido
-  (posts de coautoria; pedindo `festivalmada` vieram `cartolamag`, `toca_uol` e `festivalmada`;
-  nenhum item de `jazznobardenazare` vem com a lista de coautores vazia necessariamente, ver `coauthorProducers`
-  em `lote_misto.json`). Nem toda entrada pedida aparece como `ownerUsername`.
+- Posts normais: **nenhum** campo de entrada. Não há `inputUrl` nem `username` nos posts; só `ownerUsername`
+  (ex.: `"jazznobardenazare"`). O `ownerUsername` pode ser diferente do perfil pedido (posts de coautoria): pedindo
+  `festivalmada`, vieram `cartolamag` e `toca_uol` como donos. Nos casos observados, o perfil pedido aparece em
+  `coauthorProducers[].username` (itens 4 e 5 de `lote_misto.json`: `["festivalmada"]` e
+  `["festivalmada","sussekind",...]`). Esse mapeamento foi apenas observado, não é garantido pela API.
 - Itens de erro `not_found`: `username` (ex.: `"perfil-que-nao-existe-agenda-xyz"`) e `url`
   (ex.: `"https://www.instagram.com/perfil-que-nao-existe-agenda-xyz"`).
 - Itens de erro `no_items`: `inputUrl` (ex.: `"https://www.instagram.com/jazznobardenazare"`) e `url`; não têm `username`.
