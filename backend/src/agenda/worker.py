@@ -12,6 +12,8 @@ from collections.abc import Callable
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from agenda.coleta.apify import ApifyRecusou
+from agenda.coleta.servico import agendar_lotes
 from agenda.db import session_scope
 from agenda.extracao.extrator import RespostaInvalida
 from agenda.jobs import (
@@ -21,7 +23,7 @@ from agenda.jobs import (
     recuperar_travados,
     reservar,
 )
-from agenda.models import Job, Post
+from agenda.models import Job, LoteColeta, Post
 from agenda.pipeline import HANDLERS, Dependencias, somar_uso
 
 log = logging.getLogger(__name__)
@@ -34,6 +36,10 @@ def _manutencao(factory: sessionmaker[Session] | None, deps: Dependencias, tipos
         recuperados = recuperar_travados(s)
         if recuperados:
             log.warning("%d job(s) travado(s) devolvido(s) à fila", recuperados)
+        if "coletar_lote" in tipos:
+            criados = agendar_lotes(s, deps.relogio(), deps.horarios_coleta)
+            if criados:
+                log.info("lote(s) de coleta criado(s): %s", criados)
 
 
 def _reservar(factory: sessionmaker[Session] | None, tipos: list[str]) -> int | None:
@@ -51,6 +57,18 @@ def _marcar_post_erro(s: Session, job: Job, erro: str) -> Post | None:
         post.status = "erro"
         post.erro_msg = erro
     return post
+
+
+def _marcar_lote_erro(s: Session, job: Job, erro: str) -> None:
+    """Lote de um job `coletar_lote` que terminou em erro (R12). A mensagem vem das
+    exceções do cliente, que nunca incluem o token."""
+    if job.tipo != "coletar_lote":
+        return
+    lote = s.get(LoteColeta, (job.payload or {}).get("lote_id"))
+    if lote is not None:
+        lote.status = "erro"
+        lote.erro_msg = erro
+        s.flush()
 
 
 def _executar(factory: sessionmaker[Session] | None, deps: Dependencias, job_id: int) -> None:
@@ -76,6 +94,13 @@ def _executar(factory: sessionmaker[Session] | None, deps: Dependencias, job_id:
                 if job.tipo == "extrair_post" and exc.uso is not None:
                     post.modelo_extracao = exc.uso.modelo
             log.error("job %d (%s) terminou em erro: %s", job_id, job.tipo, erro)
+    except ApifyRecusou as exc:
+        erro = f"{type(exc).__name__}: {exc}"
+        with session_scope(factory) as s:
+            job = s.get(Job, job_id)
+            falhar_definitivo(s, job, erro)
+            _marcar_lote_erro(s, job, erro)
+            log.error("job %d (%s) terminou em erro, sem retentativa: %s", job_id, job.tipo, erro)
     except Exception as exc:  # noqa: BLE001 - qualquer falha do handler vira retentativa
         erro = f"{type(exc).__name__}: {exc}"
         with session_scope(factory) as s:
@@ -83,6 +108,7 @@ def _executar(factory: sessionmaker[Session] | None, deps: Dependencias, job_id:
             falhar(s, job, erro)
             if job.status == "erro":
                 _marcar_post_erro(s, job, erro)
+                _marcar_lote_erro(s, job, erro)
                 log.error(
                     "job %d (%s) terminou em erro após %d tentativa(s): %s",
                     job_id, job.tipo, job.tentativas, erro,
@@ -102,7 +128,8 @@ def rodar_worker(
 ) -> int:
     """Reserva e executa jobs dos `tipos`; devolve quantos processou.
 
-    Ao iniciar e a cada 5 minutos devolve à fila jobs travados. Com `uma_vez`, retorna
+    Ao iniciar e a cada 5 minutos devolve à fila jobs travados e, se `coletar_lote`
+    está nos `tipos`, cria os lotes de coleta devidos (`agendar_lotes`). Com `uma_vez`, retorna
     quando não houver job pronto; sem ele, dorme `intervalo_ocioso` e tenta de novo.
     """
     processados = 0

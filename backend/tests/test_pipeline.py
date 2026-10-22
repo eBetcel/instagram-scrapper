@@ -14,12 +14,15 @@ from reconciliacao.fabricas import extraido
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import sessionmaker
 
-from agenda.coleta.base import FakeColetor
+from agenda.coleta.apify import ApifyRecusou, ExecucaoFalhou
+from agenda.coleta.base import FakeColetor, PostColetado
 from agenda.extracao.extrator import FakeExtrator, RespostaInvalida, Resultado, Uso
 from agenda.extracao.regras import FUSO
 from agenda.extracao.schema import ExtracaoPost
 from agenda.jobs import enfileirar
-from agenda.models import Evento, EventoFonte, Job, Perfil, Post
+from agenda.models import (
+    Evento, EventoFonte, Grupo, GrupoPerfil, Job, LoteColeta, Perfil, Post, Usuario,
+)
 from agenda.pipeline import Dependencias, tratar_reconciliar_post
 from agenda.reconciliacao.decisao import Decisao, FakeReconciliador
 from agenda.storage import MemoriaStorage
@@ -28,7 +31,10 @@ from agenda.worker import rodar_worker
 AGORA = datetime.now(UTC)
 HOJE = AGORA.astimezone(FUSO).date()
 TODOS = ["extrair_post", "reconciliar_post"]
-TABELAS = "revisoes_evento, evento_fontes, eventos, posts, perfis, jobs"
+TABELAS = (
+    "revisoes_evento, evento_fontes, eventos, posts, grupo_perfis, grupos, usuarios, perfis, "
+    "lotes_coleta, jobs"
+)
 
 NOVO = Decisao(decisao="NOVO", evento_id=None, mudancas=[], motivo="novo")
 
@@ -57,8 +63,7 @@ def deps(extrator=None, reconciliador=None, storage=None, **kw):
         storage=storage or MemoriaStorage(),
         extrator=extrator or FakeExtrator({}),
         reconciliador=reconciliador or FakeReconciliador([]),
-        coletor=FakeColetor([]),
-        **kw,
+        **({"coletor": FakeColetor([])} | kw),
     )
 
 
@@ -376,6 +381,111 @@ def test_falha_no_segundo_evento_desfaz_o_primeiro(fabrica):
     assert job.status == "pendente"
     assert job.tentativas == 1
     assert "caiu no segundo evento" in job.erro_msg
+
+
+# --- coleta em lote -----------------------------------------------------------
+
+COLETA = ["coletar_lote", "extrair_post"]
+
+
+def perfil_novo_em_grupo(fabrica, username="casa"):
+    with fabrica.begin() as s:
+        u = Usuario(email="dono@x", nome="Dono")
+        s.add(u)
+        s.flush()
+        g = Grupo(dono_id=u.id, nome="g", slug="g")
+        p = Perfil(username=username)
+        s.add_all([g, p])
+        s.flush()
+        s.add(GrupoPerfil(grupo_id=g.id, perfil_id=p.id))
+
+
+def os_lotes(fabrica):
+    with fabrica() as s:
+        return s.scalars(select(LoteColeta).order_by(LoteColeta.id)).all()
+
+
+def test_fluxo_do_lote_a_reconciliacao(fabrica, caplog):
+    perfil_novo_em_grupo(fabrica)
+    coletor = FakeColetor([PostColetado(
+        shortcode="L1", legenda="show sexta", publicado_em=AGORA - timedelta(hours=3),
+        urls_imagens=["http://x/0.jpg"], perfil="casa",
+    )])
+    storage = MemoriaStorage()
+    d = deps(
+        extrator=FakeExtrator({"casa": ExtracaoPost(eventos=[show()])}),
+        reconciliador=FakeReconciliador([NOVO]),
+        storage=storage, coletor=coletor, baixar=lambda url: b"img",
+    )
+
+    with caplog.at_level(logging.INFO, logger="agenda.worker"):
+        assert rodar(fabrica, d, COLETA) == 2  # coletar_lote + extrair_post
+    [lote] = os_lotes(fabrica)
+    assert (lote.tipo, lote.status, lote.janela, lote.limite) == ("novos", "concluido", "30 days", 50)
+    assert lote.perfis == ["casa"]
+    assert lote.posts_novos == 1
+    assert coletor.chamadas == [(["casa"], "30 days", 50)]
+    assert any(f"[{lote.id}]" in r.getMessage() for r in caplog.records)
+    assert storage.ler("posts/L1/0.jpg") == b"img"
+
+    assert rodar(fabrica, d, ["reconciliar_post"]) == 1
+    [p] = os_posts(fabrica)
+    assert p.status == "reconciliado"
+    [e] = os_eventos(fabrica)
+    assert e.titulo == "Show da Banda X"
+    assert contar(fabrica, EventoFonte) == 1
+    with fabrica() as s:
+        assert s.scalars(select(Perfil)).one().ultima_coleta_em is not None
+
+
+class ColetorQuebrado:
+    def __init__(self, exc):
+        self.exc = exc
+        self.chamadas = 0
+
+    def coletar(self, usernames, *, janela, limite):
+        self.chamadas += 1
+        raise self.exc
+
+
+def test_apify_recusou_e_definitivo(fabrica, caplog):
+    perfil_novo_em_grupo(fabrica)
+    coletor = ColetorQuebrado(ApifyRecusou("Apify recusou POST /v2/acts/x/runs: HTTP 402"))
+    with caplog.at_level(logging.ERROR, logger="agenda.worker"):
+        rodar(fabrica, deps(coletor=coletor), COLETA)
+    assert coletor.chamadas == 1
+    with fabrica() as s:
+        job = s.scalars(select(Job).where(Job.tipo == "coletar_lote")).one()
+    assert (job.status, job.tentativas) == ("erro", 1)
+    [lote] = os_lotes(fabrica)
+    assert lote.status == "erro"
+    assert "HTTP 402" in lote.erro_msg
+    assert [r for r in caplog.records if r.levelno == logging.ERROR and "402" in r.getMessage()]
+
+
+def test_execucao_falhou_repete_e_marca_lote_erro_ao_esgotar(fabrica, caplog):
+    perfil_novo_em_grupo(fabrica)
+    coletor = ColetorQuebrado(ExecucaoFalhou("execução r1 terminou com FAILED"))
+    d = deps(coletor=coletor)
+    rodar(fabrica, d, COLETA)
+    with fabrica() as s:
+        job = s.scalars(select(Job).where(Job.tipo == "coletar_lote")).one()
+    assert (job.status, job.tentativas) == ("pendente", 1)
+    [lote] = os_lotes(fabrica)
+    assert lote.status == "pendente"
+
+    with caplog.at_level(logging.ERROR, logger="agenda.worker"):
+        for _ in range(4):
+            reagendar_jobs(fabrica)
+            rodar(fabrica, d, COLETA)
+    assert coletor.chamadas == 5
+    with fabrica() as s:
+        job = s.scalars(select(Job).where(Job.tipo == "coletar_lote")).one()
+    assert (job.status, job.tentativas) == ("erro", 5)
+    [lote] = os_lotes(fabrica)  # nenhum lote de novos novo: o em erro bloqueia por 1 h
+    assert lote.status == "erro"
+    assert "FAILED" in lote.erro_msg
+    assert [r for r in caplog.records if r.levelno == logging.ERROR]
 
 
 # --- worker: agendamento e recuperação (R12, R14) ------------------------------

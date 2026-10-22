@@ -11,7 +11,7 @@ import typer
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
 
-from agenda.config import Settings, get_settings
+from agenda.config import Settings, get_settings, parse_horarios
 from agenda import texto
 from agenda.db import get_session_factory, session_scope
 from agenda.extracao.regras import FUSO
@@ -22,7 +22,7 @@ from agenda.pipeline import Dependencias
 app = typer.Typer(help="Administração do núcleo de dados da agenda cultural.", no_args_is_help=True)
 
 # Instagram: letras, dígitos, '.' e '_' (até 30 caracteres).
-TIPOS_PADRAO = "extrair_post"
+TIPOS_PADRAO = "coletar_lote,extrair_post"
 
 
 def fabrica_sessoes() -> sessionmaker[Session]:
@@ -67,6 +67,7 @@ def build_deps(settings: Settings) -> Dependencias:
         reconciliador=OpenAIReconciliador(client, settings.openai_modelo_reconciliacao),
         coletor=ApifyColetor(ApifyCliente(settings.apify_token, settings.apify_actor_id)),
         preco_por_post=settings.apify_preco_por_post,
+        horarios_coleta=parse_horarios(settings.horarios_coleta),
     )
 
 

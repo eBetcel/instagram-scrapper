@@ -221,8 +221,8 @@ def test_build_deps_recusa_sem_apify_token(capsys):
     assert "APIFY_TOKEN" in capsys.readouterr().err
 
 
-def test_worker_padrao_so_extrai():
-    assert cli.TIPOS_PADRAO == "extrair_post"
+def test_worker_padrao_coleta_e_extrai():
+    assert cli.TIPOS_PADRAO == "coletar_lote,extrair_post"
 
 
 def _duplicatas(fabrica):

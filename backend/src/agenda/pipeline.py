@@ -6,14 +6,14 @@ Os handlers são idempotentes: trabalho já feito é ignorado.
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, time
 from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from agenda.coleta.base import Coletor
-from agenda.coleta.servico import baixar_url, coletar_lote
+from agenda.coleta.servico import HORARIOS_PADRAO, baixar_url, coletar_lote
 from agenda.extracao.extrator import Extrator, Uso
 from agenda.extracao.regras import agrupar_festivais, filtrar_validos
 from agenda.extracao.schema import EventoExtraido, ExtracaoPost
@@ -43,6 +43,7 @@ class Dependencias:
     preco_por_post: Decimal = Decimal("0.0017")
     baixar: Callable[[str], bytes] = baixar_url
     relogio: Callable[[], datetime] = field(default=_agora_utc)
+    horarios_coleta: list[time] = field(default_factory=lambda: list(HORARIOS_PADRAO))
 
 
 def somar_uso(post: Post, uso: Uso | None) -> None:

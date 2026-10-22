@@ -4,29 +4,138 @@ Nenhuma função faz commit: a transação pertence a quem chama.
 """
 
 import logging
+import math
 import urllib.request
-from collections.abc import Callable
-from datetime import datetime
+from collections.abc import Callable, Sequence
+from datetime import datetime, time, timedelta
 from decimal import Decimal
 
-from sqlalchemy import select
+from sqlalchemy import exists, func, or_, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from agenda.coleta.apify import classificar_erro
 from agenda.coleta.base import Coletor, PostColetado, ResultadoLote
+from agenda.config import HORARIOS_COLETA_PADRAO, parse_horarios
+from agenda.extracao.regras import FUSO
 from agenda.jobs import enfileirar
-from agenda.models import LoteColeta, Perfil, Post
+from agenda.models import GrupoPerfil, LoteColeta, Perfil, Post
 from agenda.storage import Storage
 
 log = logging.getLogger(__name__)
 
 PERFIS_POR_EXECUCAO = 50
+HORARIOS_PADRAO = parse_horarios(HORARIOS_COLETA_PADRAO)
+LIMITE_AGENDADO = 20
+LIMITE_NOVOS = 50
+JANELA_NOVOS = "30 days"
+# Lote de novos em erro, ou perfil que já esteve num lote de novos, só volta depois disso
+# (contado a partir de `criado_em`, que `agendar_lotes` grava como `agora`).
+ESPERA_NOVOS = timedelta(hours=1)
 
 
 def baixar_url(url: str) -> bytes:
     with urllib.request.urlopen(url, timeout=30) as resp:
         return resp.read()
+
+
+def ultimo_horario(agora: datetime, horarios: Sequence[time]) -> datetime:
+    """O horário configurado mais recente que já passou (<= agora), em America/Sao_Paulo."""
+    local = agora.astimezone(FUSO)
+    candidatos = [
+        datetime.combine(dia, h, tzinfo=FUSO)
+        for dia in (local.date(), local.date() - timedelta(days=1))
+        for h in horarios
+    ]
+    return max(c for c in candidatos if c <= local)
+
+
+def janela_agendada(ultimo_concluido: datetime | None, agora: datetime) -> str:
+    """Horas desde o último lote agendado concluído + 1 h, para cima; sem anterior, 30 dias."""
+    if ultimo_concluido is None:
+        return JANELA_NOVOS
+    horas = max(0, math.ceil((agora - ultimo_concluido) / timedelta(hours=1)))
+    return f"{horas + 1} hours"
+
+
+def agendar_lotes(
+    s: Session, agora: datetime, horarios: Sequence[time] = HORARIOS_PADRAO
+) -> list[int]:
+    """Cria o lote agendado do horário mais recente (se ainda não existe) e o lote de
+    perfis nunca coletados; enfileira `coletar_lote` para cada um. Devolve os ids criados.
+
+    Perfis acompanhados: `ativo` e (`fixo` ou em algum grupo).
+    """
+    em_grupo = exists().where(GrupoPerfil.perfil_id == Perfil.id)
+    acompanhados = s.execute(
+        select(Perfil.username, Perfil.ultima_coleta_em)
+        .where(Perfil.status == "ativo", or_(Perfil.fixo, em_grupo))
+        .order_by(Perfil.username)
+    ).all()
+    criados: list[int] = []
+
+    coletados = [u for u, ultima in acompanhados if ultima is not None]
+    if coletados and horarios:
+        ultimo_concluido = s.scalar(
+            select(func.max(LoteColeta.concluido_em)).where(
+                LoteColeta.tipo == "agendado", LoteColeta.status == "concluido"
+            )
+        )
+        lote_id = s.execute(
+            insert(LoteColeta)
+            .values(
+                tipo="agendado",
+                horario=ultimo_horario(agora, horarios),
+                janela=janela_agendada(ultimo_concluido, agora),
+                limite=LIMITE_AGENDADO,
+                perfis=coletados,
+                criado_em=agora,
+            )
+            .on_conflict_do_nothing(
+                index_elements=["horario"], index_where=text("tipo = 'agendado'")
+            )
+            .returning(LoteColeta.id)
+        ).scalar_one_or_none()
+        if lote_id is not None:
+            criados.append(lote_id)
+
+    novos = [u for u, ultima in acompanhados if ultima is None]
+    if novos and not _novos_bloqueado(s, agora):
+        recentes = set(
+            s.scalars(
+                select(func.unnest(LoteColeta.perfis)).where(
+                    LoteColeta.tipo == "novos", LoteColeta.criado_em > agora - ESPERA_NOVOS
+                )
+            )
+        )
+        novos = [u for u in novos if u not in recentes]
+        if novos:
+            lote = LoteColeta(
+                tipo="novos", janela=JANELA_NOVOS, limite=LIMITE_NOVOS, perfis=novos,
+                criado_em=agora,
+            )
+            s.add(lote)
+            s.flush()
+            criados.append(lote.id)
+
+    for lote_id in criados:
+        enfileirar(s, "coletar_lote", {"lote_id": lote_id}, chave=f"lote:{lote_id}")
+    return criados
+
+
+def _novos_bloqueado(s: Session, agora: datetime) -> bool:
+    """Há lote de novos pendente/executando, ou que terminou em erro há menos de 1 h."""
+    return s.scalar(
+        select(
+            exists().where(
+                LoteColeta.tipo == "novos",
+                or_(
+                    LoteColeta.status.in_(("pendente", "executando")),
+                    (LoteColeta.status == "erro") & (LoteColeta.criado_em > agora - ESPERA_NOVOS),
+                ),
+            )
+        )
+    )
 
 
 def coletar_lote(
