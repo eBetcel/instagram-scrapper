@@ -29,9 +29,12 @@ HORARIOS_PADRAO = parse_horarios(HORARIOS_COLETA_PADRAO)
 LIMITE_AGENDADO = 20
 LIMITE_NOVOS = 50
 JANELA_NOVOS = "30 days"
-# Lote de novos em erro, ou perfil que já esteve num lote de novos, só volta depois disso
-# (contado a partir de `criado_em`, que `agendar_lotes` grava como `agora`).
+# Lote de novos em erro, ou perfil que já esteve num lote de novos, só volta depois disso,
+# contado a partir do fim do lote: coalesce(concluido_em, criado_em) (R11). `agendar_lotes`
+# grava `criado_em = agora` e o worker grava `concluido_em` com o mesmo relógio (deps.relogio).
 ESPERA_NOVOS = timedelta(hours=1)
+# Chave fixa do pg_advisory_xact_lock que serializa `agendar_lotes` entre workers.
+LOCK_AGENDAMENTO = 7_310_002
 
 
 def baixar_url(url: str) -> bytes:
@@ -64,8 +67,10 @@ def agendar_lotes(
     """Cria o lote agendado do horário mais recente (se ainda não existe) e o lote de
     perfis nunca coletados; enfileira `coletar_lote` para cada um. Devolve os ids criados.
 
-    Perfis acompanhados: `ativo` e (`fixo` ou em algum grupo).
+    Perfis acompanhados: `ativo` e (`fixo` ou em algum grupo). Serializado por advisory
+    lock: dois workers na manutenção ao mesmo tempo não criam dois lotes de novos.
     """
+    s.execute(select(func.pg_advisory_xact_lock(LOCK_AGENDAMENTO)))
     em_grupo = exists().where(GrupoPerfil.perfil_id == Perfil.id)
     acompanhados = s.execute(
         select(Perfil.username, Perfil.ultima_coleta_em)
@@ -104,7 +109,7 @@ def agendar_lotes(
         recentes = set(
             s.scalars(
                 select(func.unnest(LoteColeta.perfis)).where(
-                    LoteColeta.tipo == "novos", LoteColeta.criado_em > agora - ESPERA_NOVOS
+                    LoteColeta.tipo == "novos", _fim_do_lote() > agora - ESPERA_NOVOS
                 )
             )
         )
@@ -123,6 +128,10 @@ def agendar_lotes(
     return criados
 
 
+def _fim_do_lote():
+    return func.coalesce(LoteColeta.concluido_em, LoteColeta.criado_em)
+
+
 def _novos_bloqueado(s: Session, agora: datetime) -> bool:
     """Há lote de novos pendente/executando, ou que terminou em erro há menos de 1 h."""
     return s.scalar(
@@ -131,7 +140,7 @@ def _novos_bloqueado(s: Session, agora: datetime) -> bool:
                 LoteColeta.tipo == "novos",
                 or_(
                     LoteColeta.status.in_(("pendente", "executando")),
-                    (LoteColeta.status == "erro") & (LoteColeta.criado_em > agora - ESPERA_NOVOS),
+                    (LoteColeta.status == "erro") & (_fim_do_lote() > agora - ESPERA_NOVOS),
                 ),
             )
         )

@@ -1,7 +1,9 @@
+import threading
 from datetime import UTC, datetime, time, timedelta
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select, text
+from sqlalchemy.orm import sessionmaker
 
 from agenda.coleta.servico import agendar_lotes, janela_agendada, ultimo_horario
 from agenda.config import Settings, parse_horarios
@@ -182,6 +184,19 @@ def test_lote_de_novos_em_erro_ha_menos_de_uma_hora_bloqueia(session):
     assert session.get(LoteColeta, ids[0]).perfis == ["a"]
 
 
+def test_lote_de_novos_em_erro_conta_a_hora_a_partir_da_falha(session):
+    # criado há 2 h, falhou há 10 min: ainda bloqueia (R11: coalesce(concluido_em, criado_em))
+    _perfil(session, "a", coletado=False)
+    agora = sp(2, 12)
+    session.add(LoteColeta(
+        tipo="novos", janela="30 days", limite=50, perfis=["a"], status="erro",
+        criado_em=agora - timedelta(hours=2), concluido_em=agora - timedelta(minutes=10),
+    ))
+    session.flush()
+    assert agendar_lotes(session, agora, HORARIOS) == []
+    assert len(agendar_lotes(session, agora + timedelta(minutes=51), HORARIOS)) == 1
+
+
 def test_perfil_de_lote_de_novos_concluido_recente_nao_repete(session):
     # erro desconhecido deixa ultima_coleta_em nula: não pode virar um lote a cada 5 min.
     _perfil(session, "a", coletado=False)
@@ -205,3 +220,42 @@ def test_sem_perfis_acompanhados_nao_cria_lote(session):
     assert agendar_lotes(session, sp(2, 9), HORARIOS) == []
     assert _lotes(session) == []
     assert _jobs(session) == []
+
+
+@pytest.fixture
+def fabrica(engine):
+    def limpar():
+        with engine.begin() as conn:
+            conn.execute(text(
+                "TRUNCATE lotes_coleta, jobs, grupo_perfis, grupos, usuarios, perfis "
+                "RESTART IDENTITY CASCADE"
+            ))
+
+    limpar()
+    yield sessionmaker(engine, expire_on_commit=False)
+    limpar()
+
+
+def test_duas_manutencoes_simultaneas_criam_um_so_lote_de_novos(fabrica):
+    with fabrica.begin() as s:
+        _perfil(s, "a", coletado=False)
+    agora = sp(2, 9)
+    resultado = {}
+
+    def segunda():
+        with fabrica.begin() as s2:
+            resultado["ids"] = agendar_lotes(s2, agora, HORARIOS)
+
+    with fabrica.begin() as s1:
+        primeiros = agendar_lotes(s1, agora, HORARIOS)
+        t = threading.Thread(target=segunda)
+        t.start()
+        t.join(timeout=1)
+        # a segunda espera o lock da primeira transação
+        assert t.is_alive()
+    t.join(timeout=10)
+    assert not t.is_alive()
+    assert len(primeiros) == 1
+    assert resultado["ids"] == []
+    with fabrica() as s:
+        assert s.scalar(select(func.count()).select_from(LoteColeta)) == 1

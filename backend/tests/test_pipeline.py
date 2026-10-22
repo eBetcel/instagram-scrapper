@@ -460,6 +460,7 @@ def test_apify_recusou_e_definitivo(fabrica, caplog):
     [lote] = os_lotes(fabrica)
     assert lote.status == "erro"
     assert "HTTP 402" in lote.erro_msg
+    assert lote.concluido_em is not None
     assert [r for r in caplog.records if r.levelno == logging.ERROR and "402" in r.getMessage()]
 
 
@@ -485,6 +486,7 @@ def test_execucao_falhou_repete_e_marca_lote_erro_ao_esgotar(fabrica, caplog):
     [lote] = os_lotes(fabrica)  # nenhum lote de novos novo: o em erro bloqueia por 1 h
     assert lote.status == "erro"
     assert "FAILED" in lote.erro_msg
+    assert lote.concluido_em is not None
     assert [r for r in caplog.records if r.levelno == logging.ERROR]
 
 

@@ -9,6 +9,7 @@ registra o erro. O worker de reconciliação é um único processo com
 import logging
 import time
 from collections.abc import Callable
+from datetime import datetime
 
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -59,15 +60,18 @@ def _marcar_post_erro(s: Session, job: Job, erro: str) -> Post | None:
     return post
 
 
-def _marcar_lote_erro(s: Session, job: Job, erro: str) -> None:
+def _marcar_lote_erro(s: Session, job: Job, erro: str, agora: datetime) -> None:
     """Lote de um job `coletar_lote` que terminou em erro (R12). A mensagem vem das
-    exceções do cliente, que nunca incluem o token."""
+    exceções do cliente, que nunca incluem o token. `concluido_em` recebe o relógio do
+    worker (`deps.relogio()`, o mesmo de `agendar_lotes`): a espera de 1 h antes de um
+    novo lote de novos conta a partir da falha (R11)."""
     if job.tipo != "coletar_lote":
         return
     lote = s.get(LoteColeta, (job.payload or {}).get("lote_id"))
     if lote is not None:
         lote.status = "erro"
         lote.erro_msg = erro
+        lote.concluido_em = agora
         s.flush()
 
 
@@ -99,7 +103,7 @@ def _executar(factory: sessionmaker[Session] | None, deps: Dependencias, job_id:
         with session_scope(factory) as s:
             job = s.get(Job, job_id)
             falhar_definitivo(s, job, erro)
-            _marcar_lote_erro(s, job, erro)
+            _marcar_lote_erro(s, job, erro, deps.relogio())
             log.error("job %d (%s) terminou em erro, sem retentativa: %s", job_id, job.tipo, erro)
     except Exception as exc:  # noqa: BLE001 - qualquer falha do handler vira retentativa
         erro = f"{type(exc).__name__}: {exc}"
@@ -108,7 +112,7 @@ def _executar(factory: sessionmaker[Session] | None, deps: Dependencias, job_id:
             falhar(s, job, erro)
             if job.status == "erro":
                 _marcar_post_erro(s, job, erro)
-                _marcar_lote_erro(s, job, erro)
+                _marcar_lote_erro(s, job, erro, deps.relogio())
                 log.error(
                     "job %d (%s) terminou em erro após %d tentativa(s): %s",
                     job_id, job.tipo, job.tentativas, erro,
