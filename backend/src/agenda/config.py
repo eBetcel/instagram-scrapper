@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     # Sem default no código: definidos por variável de ambiente (ver .env.example).
     openai_modelo_extracao: str
     openai_modelo_reconciliacao: str
+    apify_token: str = ""
+    apify_actor_id: str = "nH2AHrwxeTRJoN5hX"
+    apify_preco_por_post: Decimal = Decimal("0.0017")
     s3_endpoint: str = "http://localhost:8333"
     s3_bucket: str = "flyers"
     s3_access_key: str = "agenda"

@@ -206,6 +206,21 @@ def test_build_deps_recusa_sem_openai_api_key(capsys):
     assert "OPENAI_API_KEY" in capsys.readouterr().err
 
 
+def test_build_deps_recusa_sem_apify_token(capsys):
+    import typer
+
+    from agenda.cli import build_deps
+    from agenda.config import Settings
+
+    settings = Settings(
+        openai_api_key="k", apify_token="",
+        openai_modelo_extracao="x", openai_modelo_reconciliacao="y",
+    )
+    with pytest.raises(typer.Exit):
+        build_deps(settings)
+    assert "APIFY_TOKEN" in capsys.readouterr().err
+
+
 def test_worker_padrao_so_extrai():
     assert cli.TIPOS_PADRAO == "extrair_post"
 

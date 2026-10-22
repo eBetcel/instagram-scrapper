@@ -51,17 +51,22 @@ def build_deps(settings: Settings) -> Dependencias:
     """Monta as dependências reais do pipeline a partir das Settings."""
     from openai import OpenAI
 
+    from agenda.coleta.apify import ApifyCliente, ApifyColetor
     from agenda.extracao.extrator import OpenAIExtrator
     from agenda.reconciliacao.decisao import OpenAIReconciliador
     from agenda.storage import S3Storage
 
     if not settings.openai_api_key:
         raise _falhar("OPENAI_API_KEY não configurada.")
+    if not settings.apify_token:
+        raise _falhar("APIFY_TOKEN não configurado.")
     client = OpenAI(api_key=settings.openai_api_key)
     return Dependencias(
         storage=S3Storage.from_settings(settings),
         extrator=OpenAIExtrator(client, settings.openai_modelo_extracao),
         reconciliador=OpenAIReconciliador(client, settings.openai_modelo_reconciliacao),
+        coletor=ApifyColetor(ApifyCliente(settings.apify_token, settings.apify_actor_id)),
+        preco_por_post=settings.apify_preco_por_post,
     )
 
 

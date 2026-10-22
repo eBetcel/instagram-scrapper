@@ -12,7 +12,8 @@ from decimal import Decimal
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from agenda.coleta.servico import baixar_url
+from agenda.coleta.base import Coletor
+from agenda.coleta.servico import baixar_url, coletar_lote
 from agenda.extracao.extrator import Extrator, Uso
 from agenda.extracao.regras import agrupar_festivais, filtrar_validos
 from agenda.extracao.schema import EventoExtraido, ExtracaoPost
@@ -38,6 +39,8 @@ class Dependencias:
     storage: Storage
     extrator: Extrator
     reconciliador: Reconciliador
+    coletor: Coletor
+    preco_por_post: Decimal = Decimal("0.0017")
     baixar: Callable[[str], bytes] = baixar_url
     relogio: Callable[[], datetime] = field(default=_agora_utc)
 
@@ -123,7 +126,20 @@ def tratar_reconciliar_post(s: Session, job: Job, deps: Dependencias) -> None:
     s.flush()
 
 
+def tratar_coletar_lote(s: Session, job: Job, deps: Dependencias) -> None:
+    coletar_lote(
+        s,
+        job.payload["lote_id"],
+        deps.coletor,
+        deps.storage,
+        agora=deps.relogio(),
+        baixar=deps.baixar,
+        preco_por_post=deps.preco_por_post,
+    )
+
+
 HANDLERS: dict[str, Callable[[Session, Job, Dependencias], None]] = {
+    "coletar_lote": tratar_coletar_lote,
     "extrair_post": tratar_extrair_post,
     "reconciliar_post": tratar_reconciliar_post,
 }

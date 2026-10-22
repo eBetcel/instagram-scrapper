@@ -14,6 +14,7 @@ from reconciliacao.fabricas import extraido
 from sqlalchemy import func, select, text, update
 from sqlalchemy.orm import sessionmaker
 
+from agenda.coleta.base import FakeColetor
 from agenda.extracao.extrator import FakeExtrator, RespostaInvalida, Resultado, Uso
 from agenda.extracao.regras import FUSO
 from agenda.extracao.schema import ExtracaoPost
@@ -56,6 +57,7 @@ def deps(extrator=None, reconciliador=None, storage=None, **kw):
         storage=storage or MemoriaStorage(),
         extrator=extrator or FakeExtrator({}),
         reconciliador=reconciliador or FakeReconciliador([]),
+        coletor=FakeColetor([]),
         **kw,
     )
 

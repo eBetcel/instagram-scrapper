@@ -94,3 +94,19 @@ def test_apagar_grupo_apaga_perfis_e_seguidores_do_grupo(session):
     session.execute(delete(Grupo).where(Grupo.id == g.id))
     assert session.scalar(select(func.count()).select_from(GrupoPerfil)) == 0
     assert session.scalar(select(func.count()).select_from(GrupoSeguidor)) == 0
+
+
+def test_lote_agendado_unico_por_horario(session):
+    from agenda.models import LoteColeta
+
+    h = datetime(2030, 1, 1, 8, tzinfo=UTC)
+
+    def lote(tipo, horario):
+        session.add(LoteColeta(tipo=tipo, horario=horario, janela="1 hours", limite=20, perfis=[]))
+        session.flush()
+
+    lote("agendado", h)
+    lote("novos", h)  # a unicidade só vale para agendado
+    lote("novos", h)
+    with pytest.raises(IntegrityError):
+        lote("agendado", h)

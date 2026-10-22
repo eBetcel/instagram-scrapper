@@ -256,3 +256,41 @@ class GrupoSeguidor(Base):
         ForeignKey("usuarios.id", ondelete="CASCADE"), primary_key=True, index=True
     )
     seguido_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+
+
+class LoteColeta(Base):
+    """Uma coleta em lote via Apify (agendada ou de perfis novos)."""
+
+    __tablename__ = "lotes_coleta"
+    __table_args__ = (
+        CheckConstraint(_in("tipo", ("agendado", "novos")), name="ck_lotes_coleta_tipo"),
+        CheckConstraint(
+            _in("status", ("pendente", "executando", "concluido", "erro")),
+            name="ck_lotes_coleta_status",
+        ),
+        Index(
+            "uq_lotes_coleta_agendado_horario",
+            "horario",
+            unique=True,
+            postgresql_where=text("tipo = 'agendado'"),
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tipo: Mapped[str] = mapped_column(String)
+    horario: Mapped[datetime | None] = mapped_column(TS)
+    janela: Mapped[str] = mapped_column(Text)
+    limite: Mapped[int] = mapped_column(Integer)
+    perfis: Mapped[list[str]] = mapped_column(ARRAY(Text))
+    status: Mapped[str] = mapped_column(String, server_default="pendente", default="pendente")
+    run_ids: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'"), default=list
+    )
+    posts: Mapped[int] = mapped_column(Integer, server_default="0", default=0)
+    posts_novos: Mapped[int] = mapped_column(Integer, server_default="0", default=0)
+    custo_estimado: Mapped[Decimal] = mapped_column(
+        Numeric(10, 4), server_default="0", default=Decimal(0)
+    )
+    criado_em: Mapped[datetime] = mapped_column(TS, server_default=func.now())
+    concluido_em: Mapped[datetime | None] = mapped_column(TS)
+    erro_msg: Mapped[str | None] = mapped_column(Text)
