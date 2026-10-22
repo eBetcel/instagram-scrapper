@@ -22,6 +22,9 @@ class ResultadoLote:
     posts: list[PostColetado] = field(default_factory=list)
     erros: dict[str, str] = field(default_factory=dict)
     run_ids: list[str] = field(default_factory=list)
+    # Itens de post (sem `error`) que a fonte devolveu, antes de descartes e deduplicação:
+    # é o que a Apify cobra.
+    itens_cobrados: int = 0
 
 
 class Coletor(Protocol):
@@ -78,4 +81,5 @@ class FakeColetor:
             posts=posts,
             erros={u: m for u, m in self._erros.items() if u in pedidos},
             run_ids=[run_id],
+            itens_cobrados=len(posts),
         )

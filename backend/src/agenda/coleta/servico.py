@@ -279,6 +279,7 @@ def coletar_lote(
         )
         resultado.posts.extend(parte.posts)
         resultado.erros.update(parte.erros)
+        resultado.itens_cobrados += parte.itens_cobrados
         run_ids.append(parte.run_ids[0] if parte.run_ids else anterior or "")
     resultado.run_ids = run_ids
 
@@ -314,7 +315,7 @@ def coletar_lote(
         if username not in resultado.erros:
             perfis[username].ultima_coleta_em = agora
 
-    lote.posts = len(resultado.posts)
+    lote.posts = resultado.itens_cobrados  # o que a Apify cobrou, antes de descartes
     lote.posts_novos = novos
     lote.custo_estimado = (Decimal(lote.posts) * preco_por_post).quantize(Decimal("0.0001"))
     lote.run_ids = resultado.run_ids

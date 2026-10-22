@@ -240,3 +240,35 @@ def test_timestamp_invalido_nao_derruba_o_lote(caplog):
         r = converter_itens(itens, ["festivalmada"])
     assert [p.shortcode for p in r.posts] == ["OK"]
     assert sum(x.levelno == logging.WARNING for x in caplog.records) == 2
+
+
+def test_itens_cobrados_conta_todos_os_posts_devolvidos():
+    itens = [
+        _post(shortCode="OK"),
+        _post(shortCode="OK"),  # repetido
+        _post(shortCode="FORA", ownerUsername="outro"),  # não atribuível
+        _post(shortCode="TS", timestamp="lixo"),  # timestamp inválido
+        {"error": "no_items", "username": "festivalmada"},
+        {"error": "not_found", "username": "x"},
+    ]
+    r = converter_itens(itens, ["festivalmada"])
+    assert [p.shortcode for p in r.posts] == ["OK"]
+    assert r.itens_cobrados == 4
+
+
+def test_fake_coletor_cobra_os_posts_devolvidos():
+    p1 = PostColetado("A", "", datetime(2026, 1, 1, tzinfo=UTC), [], "a")
+    assert FakeColetor([p1]).coletar(["a"], janela="1 days", limite=1).itens_cobrados == 1
+
+
+def test_item_que_nao_e_dict_e_descartado_com_warning(caplog):
+    itens = [
+        "lixo",
+        None,
+        _post(shortCode="CO", ownerUsername="outro",
+              coauthorProducers=["texto", None, {"username": "festivalmada"}]),
+    ]
+    with caplog.at_level(logging.WARNING):
+        r = converter_itens(itens, ["festivalmada"])
+    assert [(p.shortcode, p.perfil) for p in r.posts] == [("CO", "festivalmada")]
+    assert sum(x.levelno == logging.WARNING for x in caplog.records) >= 2

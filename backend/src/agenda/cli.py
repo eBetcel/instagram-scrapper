@@ -96,7 +96,9 @@ def perfil_listar() -> None:
 def coletar(
     perfil: Annotated[str | None, typer.Option("--perfil", help="Só este perfil (sem: todos os acompanhados).")] = None,
 ) -> None:
-    """Cria já um lote de coleta e enfileira (o worker o executa)."""
+    """Cria já um lote de coleta e enfileira (o worker o executa).
+
+    Perfis que já estão num lote pendente ou em execução são pulados."""
     from agenda.coleta.servico import criar_lotes_imediatos, perfis_acompanhados
 
     agora = datetime.now(UTC)
@@ -113,8 +115,24 @@ def coletar(
             alvos = perfis_acompanhados(s)
         if not alvos:
             raise _falhar("Nenhum perfil acompanhado para coletar.")
-        lotes = criar_lotes_imediatos(s, agora, alvos)
+        em_lote = set(
+            s.scalars(
+                select(func.unnest(LoteColeta.perfis)).where(
+                    LoteColeta.status.in_(("pendente", "executando"))
+                )
+            )
+        )
+        pulados = [u for u, _ in alvos if u in em_lote]
+        alvos = [(u, ultima) for u, ultima in alvos if u not in em_lote]
+        lotes = criar_lotes_imediatos(s, agora, alvos) if alvos else []
         resumo = [(l.id, len(l.perfis), l.janela) for l in lotes]
+    if pulados:
+        typer.echo(
+            "Já em lote pendente ou em execução (pulados): "
+            + ", ".join(f"@{u}" for u in pulados)
+        )
+    if not resumo:
+        typer.echo("Nenhum lote criado.")
     for lote_id, n, janela in resumo:
         typer.echo(f"Lote {lote_id} criado: {n} perfil(is), janela {janela}.")
 

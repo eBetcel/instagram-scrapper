@@ -218,7 +218,9 @@ def converter_itens(itens: list[dict], usernames: list[str]) -> ResultadoLote:
 
     Atribuição: ``ownerUsername`` (minúsculo) se foi pedido; senão o primeiro
     pedido presente em ``coauthorProducers[].username``; senão descarta (WARNING).
-    Itens ``no_items`` são descartados (INFO). Os demais itens com ``error``
+    Itens ``no_items`` são descartados (INFO); itens ou coautores que não são objetos,
+    com WARNING. ``itens_cobrados`` conta os itens de post (sem ``error``) antes de
+    qualquer descarte. Os demais itens com ``error``
     entram em ``erros[username]`` com o texto de ``errorDescription`` (ou o
     código ``error`` se não houver), que ``classificar_erro`` sabe interpretar.
     """
@@ -226,6 +228,9 @@ def converter_itens(itens: list[dict], usernames: list[str]) -> ResultadoLote:
     resultado = ResultadoLote()
     vistos: set[str] = set()
     for item in itens:
+        if not isinstance(item, dict):
+            log.warning("item descartado: não é um objeto (%s)", type(item).__name__)
+            continue
         erro = item.get("error")
         if erro:
             alvo = _username_do_erro(item)
@@ -236,6 +241,7 @@ def converter_itens(itens: list[dict], usernames: list[str]) -> ResultadoLote:
             else:
                 log.warning("item de erro sem username identificável: %s", erro)
             continue
+        resultado.itens_cobrados += 1
         shortcode = item.get("shortCode")
         timestamp = item.get("timestamp")
         if not shortcode or not timestamp:
@@ -245,6 +251,9 @@ def converter_itens(itens: list[dict], usernames: list[str]) -> ResultadoLote:
         perfil = dono if dono in pedidos else None
         if perfil is None:
             for co in item.get("coauthorProducers") or []:
+                if not isinstance(co, dict):
+                    log.warning("post %s: coautor ignorado (não é um objeto)", shortcode)
+                    continue
                 nome = str(co.get("username") or "").lower()
                 if nome in pedidos:
                     perfil = nome

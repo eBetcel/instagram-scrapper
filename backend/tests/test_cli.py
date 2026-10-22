@@ -321,6 +321,27 @@ def test_coletar_sem_perfil_inclui_todos_os_acompanhados(fabrica):
         assert len(s.scalars(select(Job).where(Job.tipo == "coletar_lote")).all()) == 2
 
 
+def test_coletar_pula_perfis_ja_em_lote_pendente_ou_executando(fabrica):
+    for u in ("a", "b", "c"):
+        assert invocar("perfil-adicionar", u).exit_code == 0
+    with fabrica() as s, s.begin():
+        s.add_all([
+            LoteColeta(tipo="novos", janela="30 days", limite=50, perfis=["a"], status="pendente"),
+            LoteColeta(tipo="novos", janela="30 days", limite=50, perfis=["b"], status="executando"),
+            LoteColeta(tipo="novos", janela="30 days", limite=50, perfis=["c"], status="concluido"),
+        ])
+    r = invocar("coletar")
+    assert r.exit_code == 0, r.output
+    assert "@a" in r.output and "@b" in r.output
+    novo = _lotes(fabrica)[-1]
+    assert novo.perfis == ["c"]
+
+    r = invocar("coletar", "--perfil", "a")
+    assert r.exit_code == 0, r.output
+    assert "@a" in r.output
+    assert len(_lotes(fabrica)) == 4  # nenhum lote novo
+
+
 def test_coletar_perfil_desconhecido_falha_com_mensagem(fabrica):
     r = invocar("coletar", "--perfil", "ninguem")
     assert r.exit_code != 0

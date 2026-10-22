@@ -164,7 +164,9 @@ def test_lote_registra_posts_posts_novos_custo_run_ids_e_concluido(session):
     class ColetorComRuns(FakeColetor):
         def coletar(self, usernames, *, janela, limite, **kw):
             r = super().coletar(usernames, janela=janela, limite=limite, **kw)
-            return ResultadoLote(posts=r.posts, erros=r.erros, run_ids=["run1"])
+            return ResultadoLote(
+                posts=r.posts, erros=r.erros, run_ids=["run1"], itens_cobrados=r.itens_cobrados
+            )
 
     coletor = ColetorComRuns([_post("velho"), _post("n1"), _post("n2")])
     assert _rodar(session, lote, coletor) == 2
@@ -278,3 +280,18 @@ def test_retentativa_apos_falha_no_segundo_bloco_reaproveita_os_runs(session):
     assert cliente.aguardados == ["run-1", "run-2", "run-1", "run-2"]
     assert lote.status == "concluido"
     assert lote.run_ids == ["run-1", "run-2"]
+
+
+def test_posts_do_lote_conta_os_itens_cobrados_pela_apify(session):
+    lote = _lote(session)
+
+    class ColetorCobrado(FakeColetor):
+        def coletar(self, usernames, **kw):
+            r = super().coletar(usernames, **kw)
+            r.itens_cobrados = 5  # itens devolvidos, inclusive os descartados na conversão
+            return r
+
+    _rodar(session, lote, ColetorCobrado([_post("a1")]))
+    assert lote.posts == 5
+    assert lote.posts_novos == 1
+    assert lote.custo_estimado == Decimal("0.0085")
