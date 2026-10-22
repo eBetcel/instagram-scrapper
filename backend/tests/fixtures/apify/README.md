@@ -1,0 +1,45 @@
+# Fixtures da Apify
+
+Respostas cruas (lista de itens do dataset) do actor `apify/instagram-post-scraper`
+(`nH2AHrwxeTRJoN5hX`), rota `run-sync-get-dataset-items`, gravadas em 22/10/2026.
+Todas as execuções usaram `resultsLimit=3`, `skipPinnedPosts=true`, `dataDetailLevel="basicData"`
+(HTTP 201 em todas). Custo total aproximado: 13 itens, cerca de US$ 0,02 (7 + 1 + 5 itens).
+
+| Arquivo | Entrada | Itens | Cobre |
+|---|---|---|---|
+| `lote_misto.json` | `username=["festivalmada","jazznobardenazare","perfil-que-nao-existe-agenda-xyz"]`, `onlyPostsNewerThan="30 days"` | 7 (6 posts + 1 erro) | Image, Sidecar, Video, legenda preenchida, erro `not_found`, posts de coautoria |
+| `janela_horas.json` | `username=["jazznobardenazare"]`, `onlyPostsNewerThan="12 hours"` | 1 (erro) | janela em horas; item `no_items` |
+| `extra_privado_legenda_vazia.json` | `username=["banksy","private","joe"]` | 5 (3 posts + 2 erros) | legenda vazia (`""`), Video, Sidecar, erro `not_found` |
+
+Não foi observado: legenda `null` (só `""`) nem perfil privado confirmado (nenhum perfil privado conhecido foi usado;
+o erro `no_items` é descrito pela API como "vazio ou privado", sem distinguir os dois casos).
+
+## (a) `onlyPostsNewerThan` aceita horas?
+
+Sim, a API aceitou `"12 hours"` sem erro de validação (HTTP 201). Como o perfil não teve posts nas últimas 12 h,
+a resposta foi um único item de erro `no_items` (e nenhum post). Ou seja: janela vazia NÃO vem como lista vazia,
+vem como item com `error: "no_items"`.
+
+## (b) Que campo identifica a entrada de origem?
+
+- Posts normais: **nenhum**. Não há `inputUrl` nem `username` nos posts; só `ownerUsername`.
+  Exemplo: `ownerUsername: "jazznobardenazare"`. Atenção: o dono pode ser outro perfil que não o pedido
+  (posts de coautoria; pedindo `festivalmada` vieram `cartolamag`, `toca_uol` e `festivalmada`;
+  nenhum item de `jazznobardenazare` vem com a lista de coautores vazia necessariamente, ver `coauthorProducers`
+  em `lote_misto.json`). Nem toda entrada pedida aparece como `ownerUsername`.
+- Itens de erro `not_found`: `username` (ex.: `"perfil-que-nao-existe-agenda-xyz"`) e `url`
+  (ex.: `"https://www.instagram.com/perfil-que-nao-existe-agenda-xyz"`).
+- Itens de erro `no_items`: `inputUrl` (ex.: `"https://www.instagram.com/jazznobardenazare"`) e `url`; não têm `username`.
+
+Chaves dos posts (basicData): `caption, commentsCount, dimensionsHeight, dimensionsWidth, displayUrl, hashtags, id,
+isPinned, likesCount, ownerFullName, ownerId, ownerUsername, shortCode, timestamp, type, url, videoUrl`
+(+ `coauthorProducers` em parte). Não há `images` nos Sidecar com basicData.
+Chaves de erro: `not_found` -> `error, errorDescription, url, username`;
+`no_items` -> `error, errorDescription, inputUrl, requestErrorMessages, url`.
+
+## Mensagens de erro vistas (textos exatos)
+
+| `error` | `errorDescription` |
+|---|---|
+| `not_found` | `Profile does not exist` |
+| `no_items` | `Empty or private data for provided input` |
