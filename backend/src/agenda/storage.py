@@ -45,7 +45,7 @@ class S3Storage:
             settings.s3_endpoint,
             settings.s3_bucket,
             settings.s3_access_key,
-            settings.s3_secret_key,
+            settings.s3_secret_key.get_secret_value(),
         )
 
     def _garantir_bucket(self) -> None:

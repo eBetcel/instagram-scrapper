@@ -40,3 +40,28 @@ def test_smtp_enviador_monta_mensagem(monkeypatch):
     assert (msg["From"], msg["To"], msg["Subject"]) == ("agenda@x.com", "b@x.com", "Seu link")
     assert "texto do link" in msg.get_content()
     assert conexoes == [("smtp.x", 2525)]  # sem TLS nem login por padrão
+
+
+def test_smtp_enviador_faz_login_com_a_senha_em_texto(monkeypatch):
+    logins = []
+
+    class SMTPFalso:
+        def __init__(self, host, porta, timeout=None):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def login(self, u, p):
+            logins.append((u, p))
+
+        def send_message(self, msg):
+            pass
+
+    monkeypatch.setattr("agenda.email.smtplib.SMTP", SMTPFalso)
+    cfg = ConfigApi(_env_file=None, smtp_usuario="u", smtp_senha="senha-falsa")
+    SmtpEnviador(cfg).enviar("b@x.com", "a", "t")
+    assert logins == [("u", "senha-falsa")]

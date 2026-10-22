@@ -22,6 +22,19 @@ def test_s3_storage_configura_regiao_e_assinatura_v4():
     assert c.meta.config.signature_version == "s3v4"
 
 
+def test_s3_storage_from_settings_usa_o_segredo_em_texto(monkeypatch):
+    from agenda.config import Settings
+    from agenda.storage import S3Storage
+
+    vistos = []
+    monkeypatch.setattr(S3Storage, "__init__", lambda self, *a: vistos.append(a) or None)
+    S3Storage.from_settings(Settings(
+        _env_file=None, openai_modelo_extracao="x", openai_modelo_reconciliacao="y",
+        s3_access_key="k", s3_secret_key="segredo-falso",
+    ))
+    assert vistos[0][2:] == ("k", "segredo-falso")
+
+
 class _ClienteFalso:
     def __init__(self, head_codigo=None):
         self.head_codigo = head_codigo

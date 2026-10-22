@@ -23,7 +23,7 @@ class SmtpEnviador:
             if self.config.smtp_tls:
                 smtp.starttls()
             if self.config.smtp_usuario:
-                smtp.login(self.config.smtp_usuario, self.config.smtp_senha)
+                smtp.login(self.config.smtp_usuario, self.config.smtp_senha.get_secret_value())
             smtp.send_message(msg)
 
 

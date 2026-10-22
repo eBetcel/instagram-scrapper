@@ -3,7 +3,7 @@ from datetime import time
 from decimal import Decimal
 from functools import lru_cache
 
-from pydantic import field_validator
+from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # (entrada, saida) em USD por 1M de tokens.
@@ -32,30 +32,35 @@ def parse_horarios(texto: str) -> list[time]:
     return sorted(horarios)
 
 
+# hide_input_in_errors: sem ele, um erro de validação traz a entrada inteira (todas as
+# variáveis lidas, segredos inclusive) em `input_value`. Segredos são SecretStr.
+_CONFIG = SettingsConfigDict(env_file=".env", extra="ignore", hide_input_in_errors=True)
+
+
 class ConfigBanco(BaseSettings):
     """Só o necessário para falar com o banco (Alembic não depende da OpenAI)."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = _CONFIG
 
     database_url: str = DATABASE_URL_PADRAO
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = _CONFIG
 
     database_url: str = DATABASE_URL_PADRAO
-    openai_api_key: str = ""
+    openai_api_key: SecretStr = SecretStr("")
     # Sem default no código: definidos por variável de ambiente (ver .env.example).
     openai_modelo_extracao: str
     openai_modelo_reconciliacao: str
-    apify_token: str = ""
+    apify_token: SecretStr = SecretStr("")
     apify_actor_id: str = "nH2AHrwxeTRJoN5hX"
     apify_preco_por_post: Decimal = Decimal("0.0017")
     horarios_coleta: str = HORARIOS_COLETA_PADRAO
     s3_endpoint: str = "http://localhost:8333"
     s3_bucket: str = "flyers"
     s3_access_key: str = "agenda"
-    s3_secret_key: str = "agenda-secret"
+    s3_secret_key: SecretStr = SecretStr("agenda-secret")
 
     @field_validator("horarios_coleta")
     @classmethod
@@ -67,14 +72,14 @@ class Settings(BaseSettings):
 class ConfigApi(BaseSettings):
     """Configuração da api (não exige as variáveis da OpenAI)."""
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
+    model_config = _CONFIG
 
     database_url: str = DATABASE_URL_PADRAO
     app_url: str = "http://localhost:3000"
     smtp_host: str = "localhost"
     smtp_porta: int = 1025
     smtp_usuario: str = ""
-    smtp_senha: str = ""
+    smtp_senha: SecretStr = SecretStr("")
     smtp_tls: bool = False
     email_remetente: str = "agenda@localhost"
     cookie_seguro: bool = False
@@ -83,7 +88,7 @@ class ConfigApi(BaseSettings):
     s3_endpoint: str = "http://localhost:8333"
     s3_bucket: str = "flyers"
     s3_access_key: str = "agenda"
-    s3_secret_key: str = "agenda-secret"
+    s3_secret_key: SecretStr = SecretStr("agenda-secret")
 
 
 @lru_cache

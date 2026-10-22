@@ -56,16 +56,16 @@ def build_deps(settings: Settings) -> Dependencias:
     from agenda.reconciliacao.decisao import OpenAIReconciliador
     from agenda.storage import S3Storage
 
-    if not settings.openai_api_key:
+    if not settings.openai_api_key.get_secret_value():
         raise _falhar("OPENAI_API_KEY não configurada.")
-    if not settings.apify_token:
+    if not settings.apify_token.get_secret_value():
         raise _falhar("APIFY_TOKEN não configurado.")
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key.get_secret_value())
     return Dependencias(
         storage=S3Storage.from_settings(settings),
         extrator=OpenAIExtrator(client, settings.openai_modelo_extracao),
         reconciliador=OpenAIReconciliador(client, settings.openai_modelo_reconciliacao),
-        coletor=ApifyColetor(ApifyCliente(settings.apify_token, settings.apify_actor_id)),
+        coletor=ApifyColetor(ApifyCliente(settings.apify_token.get_secret_value(), settings.apify_actor_id)),
         preco_por_post=settings.apify_preco_por_post,
         horarios_coleta=parse_horarios(settings.horarios_coleta),
     )

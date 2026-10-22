@@ -22,12 +22,12 @@ def avaliar(
         typer.echo(f"Diretório não encontrado: {golden}", err=True)
         raise typer.Exit(1)
     settings = get_settings()
-    if not settings.openai_api_key:
+    if not settings.openai_api_key.get_secret_value():
         typer.echo("OPENAI_API_KEY não configurada.", err=True)
         raise typer.Exit(1)
     from openai import OpenAI
 
-    client = OpenAI(api_key=settings.openai_api_key)
+    client = OpenAI(api_key=settings.openai_api_key.get_secret_value())
     casos = carregar_casos(golden)
     if etapa == "extracao":
         from agenda.extracao.extrator import OpenAIExtrator
