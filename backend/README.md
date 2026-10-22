@@ -81,15 +81,46 @@ Rode, cada um sob um supervisor que o reinicie se cair (systemd, supervisord,
 derruba o processo em vez de ser engolido:
 
 ```sh
-uv run agenda worker                      # coleta + extração; pode haver vários
+uv run agenda worker                      # coleta + extração: exatamente UM processo
 uv run agenda worker-reconciliacao        # reconciliação: exatamente UM processo
 ```
+
+Deve haver **um único `agenda worker` com `coletar_lote`** (o padrão). Um lote pode passar
+de 30 minutos (até 15 min por bloco de 50 perfis, mais downloads), e a manutenção de
+qualquer worker devolve à fila jobs `executando` há mais de 30 min (`recuperar_travados`,
+limite único para todos os tipos): com um segundo worker de coleta, o mesmo lote rodaria
+em dois processos. Com um só, o job devolvido não é pego por ninguém enquanto o worker
+ocupado não termina.
 
 O `worker` agenda sozinho dois lotes de coleta por dia (nos `HORARIOS_COLETA`) e um lote
 imediato para cada @ novo (nunca coletado), e devolve à fila jobs travados. `--uma-vez`
 processa o que estiver pronto e sai; `--tipos coletar_lote` limita a coleta. Se a Apify
 recusar (401/402/403: token inválido, saldo ou limite de gasto), o lote vai para `erro`
-sem retentativa e o log mostra ERROR; falhas de execução da Apify são retentadas.
+sem retentativa e o log mostra ERROR; falhas de execução da Apify são retentadas (até 3
+tentativas por lote). O id de cada execução da Apify é gravado no lote assim que ela
+começa: a retentativa aguarda e lê essa mesma execução (sem pagar de novo) e só inicia
+outra se ela terminou `FAILED`, `ABORTED` ou `TIMED-OUT`. Uma execução que passa de 15 min
+é abortada. A janela do lote agendado parte do último lote agendado concluído; sem
+nenhum, da `ultima_coleta_em` mais antiga dos perfis do lote (no máximo 30 dias).
+
+## Trocar a aplicação em uso para esta versão
+
+Só documentação: estes passos rodam no checkout principal
+(`/Users/ebetcel/orca/projects/mestrado-app`), na ordem, por quem for fazer a troca.
+
+1. Pare os processos que usam o código: `U=$(id -u); for s in worker worker-reconc api; do launchctl bootout gui/$U/com.agenda.$s; done`.
+2. No checkout principal, mova para fora do repositório o arquivo não versionado
+   `.claude/skills/agenda-servicos/SKILL.md` (ex.: `mv .claude/skills/agenda-servicos/SKILL.md ~/SKILL.md.antigo`):
+   esta versão traz o arquivo versionado e o merge/pull falharia por colisão.
+3. Traga esta versão (`git merge` / `git pull` da branch para `master`).
+4. `cd backend && uv sync`.
+5. `uv run alembic upgrade head` (remove o scraper antigo e cria `lotes_coleta`).
+6. Acrescente `APIFY_TOKEN=...` (e, se quiser, `HORARIOS_COLETA=08:00,18:00`) ao `backend/.env` do checkout principal.
+7. Configure o limite de gasto mensal da conta no console da Apify.
+8. Só se `web/` mudou: `cd web && npm run build`.
+9. Religue: `for s in api worker-reconc worker; do launchctl bootstrap gui/$U ~/Library/LaunchAgents/com.agenda.$s.plist; done`.
+10. Espere um lote agendado imediato (o do horário mais recente) no `worker.log` / `agenda lotes`, com a
+    janela a partir da coleta mais antiga dos perfis (no máximo 30 dias).
 
 ## Consultar e corrigir
 

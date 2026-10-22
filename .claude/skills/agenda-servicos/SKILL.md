@@ -45,6 +45,9 @@ tem saldo e limite de gasto configurado** (o limite de gasto da conta é a trava
 `worker.log` mostrar `ApifyRecusou` (401/402/403), o token é inválido ou o limite/saldo acabou: não
 insista. Pare o worker, corrija o token ou o limite no console da Apify e só então religue. O worker
 cria dois lotes por dia (`HORARIOS_COLETA`, padrão 08:00 e 18:00) e um lote imediato para @s novos.
+Rode **exatamente um** `worker` de coleta: um lote pode passar de 30 min e qualquer worker devolve à
+fila jobs `executando` há mais de 30 min (limite único por tipo); um segundo worker de coleta
+executaria o mesmo lote em paralelo.
 
 ## Parar / reiniciar
 
@@ -70,10 +73,31 @@ cd backend && uv run agenda lotes          # últimos lotes (status, posts, cust
 
 - **Nada é coletado e não há worker:** `launchctl list | grep worker` não mostra PID. Ligue (acima).
 - **`@` fica "coletando…":** o `worker` ou o `worker-reconc` está parado, ou o lote de coleta falhou (veja `agenda lotes` e o `worker.log`).
+  Um perfil com erro desconhecido persistente da Apify (WARNING `erro ao coletar @x` no `worker.log`) também fica
+  "coletando…": sem `ultima_coleta_em`, entra de novo num lote de novos a cada hora, sem custo de posts (a Apify não
+  devolve itens para ele). Confira o @ no Instagram e remova-o dos grupos se não existir mais.
 - **Lote em `erro`:** `cd backend && uv run agenda coletar --perfil <username>` cria um lote novo agora (use `agenda coletar` para todos os acompanhados); para um post,
   `uv run agenda post-reprocessar <shortcode>`.
 - **Porta 5432/1025 ocupada:** outro contêiner (de outro projeto ou worktree) a usa; pare-o ou mude a porta.
 - **Link de login não chega:** abra http://localhost:8025 (Mailpit). Fora do computador local é preciso SMTP real e `APP_URL`.
+
+## Trocar a aplicação em uso para esta versão
+
+Faça na ordem, no checkout principal (`/Users/ebetcel/orca/projects/mestrado-app`):
+
+1. Pare: `U=$(id -u); for s in worker worker-reconc api; do launchctl bootout gui/$U/com.agenda.$s; done`.
+2. Mova para fora do repositório a cópia não versionada desta skill
+   (`mv .claude/skills/agenda-servicos/SKILL.md ~/SKILL.md.antigo`): a versão nova a traz versionada e o
+   merge/pull colidiria com ela.
+3. `git merge`/`git pull` da versão nova em `master`.
+4. `cd backend && uv sync`.
+5. `uv run alembic upgrade head`.
+6. Acrescente `APIFY_TOKEN=...` (e, opcional, `HORARIOS_COLETA`) ao `backend/.env` do checkout principal.
+7. Configure o limite de gasto mensal da conta no console da Apify.
+8. Só se `web/` mudou: `cd ../web && npm run build`.
+9. Religue: `for s in api worker-reconc worker; do launchctl bootstrap gui/$U ~/Library/LaunchAgents/com.agenda.$s.plist; done`.
+10. Espere um lote agendado imediato em `agenda lotes`, com janela a partir da coleta mais antiga dos
+    perfis (no máximo 30 dias).
 
 ## Se os plists sumirem
 
