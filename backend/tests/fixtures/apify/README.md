@@ -46,3 +46,10 @@ Chaves de erro: `not_found` -> `error, errorDescription, url, username`;
 |---|---|
 | `not_found` | `Profile does not exist` |
 | `no_items` | `Empty or private data for provided input` |
+
+## Filtro de janela em horas (R15)
+
+Verificado em 22/10/2026 com `ApifyColetor.coletar(["natgeo"], janela="24 hours", limite=3)`:
+3 posts devolvidos, nenhum erro, todos publicados dentro das últimas 24 h (17,2 h, 20,3 h e 23,3 h
+antes da consulta). O filtro `onlyPostsNewerThan` em horas é aceito e respeitado. Como o limite (3)
+foi atingido, isso não mostra se há mais posts na janela, só que nenhum item veio de fora dela.

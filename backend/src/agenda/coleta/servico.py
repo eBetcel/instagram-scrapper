@@ -61,6 +61,50 @@ def janela_agendada(ultimo_concluido: datetime | None, agora: datetime) -> str:
     return f"{horas + 1} hours"
 
 
+def perfis_acompanhados(s: Session) -> list[tuple[str, datetime | None]]:
+    """(username, ultima_coleta_em) dos perfis `ativo` e (`fixo` ou em algum grupo)."""
+    em_grupo = exists().where(GrupoPerfil.perfil_id == Perfil.id)
+    return [
+        (u, ultima)
+        for u, ultima in s.execute(
+            select(Perfil.username, Perfil.ultima_coleta_em)
+            .where(Perfil.status == "ativo", or_(Perfil.fixo, em_grupo))
+            .order_by(Perfil.username)
+        ).all()
+    ]
+
+
+def criar_lotes_imediatos(
+    s: Session, agora: datetime, perfis: Sequence[tuple[str, datetime | None]]
+) -> list[LoteColeta]:
+    """Lotes `novos` (sem horário) já enfileirados: um para os nunca coletados (30 dias,
+    limite 50) e outro para os já coletados (janela agendada, limite 20)."""
+    nunca = [u for u, ultima in perfis if ultima is None]
+    coletados = [u for u, ultima in perfis if ultima is not None]
+    lotes: list[LoteColeta] = []
+    if nunca:
+        lotes.append(LoteColeta(
+            tipo="novos", janela=JANELA_NOVOS, limite=LIMITE_NOVOS, perfis=nunca, criado_em=agora
+        ))
+    if coletados:
+        ultimo_concluido = s.scalar(
+            select(func.max(LoteColeta.concluido_em)).where(
+                LoteColeta.tipo == "agendado", LoteColeta.status == "concluido"
+            )
+        )
+        lotes.append(LoteColeta(
+            tipo="novos", janela=janela_agendada(ultimo_concluido, agora),
+            limite=LIMITE_AGENDADO, perfis=coletados, criado_em=agora,
+        ))
+    s.add_all(lotes)
+    s.flush()
+    for lote in lotes:
+        enfileirar(
+            s, "coletar_lote", {"lote_id": lote.id}, chave=f"lote:{lote.id}", executar_em=agora
+        )
+    return lotes
+
+
 def agendar_lotes(
     s: Session, agora: datetime, horarios: Sequence[time] = HORARIOS_PADRAO
 ) -> list[int]:
@@ -71,12 +115,7 @@ def agendar_lotes(
     lock: dois workers na manutenção ao mesmo tempo não criam dois lotes de novos.
     """
     s.execute(select(func.pg_advisory_xact_lock(LOCK_AGENDAMENTO)))
-    em_grupo = exists().where(GrupoPerfil.perfil_id == Perfil.id)
-    acompanhados = s.execute(
-        select(Perfil.username, Perfil.ultima_coleta_em)
-        .where(Perfil.status == "ativo", or_(Perfil.fixo, em_grupo))
-        .order_by(Perfil.username)
-    ).all()
+    acompanhados = perfis_acompanhados(s)
     criados: list[int] = []
 
     coletados = [u for u, ultima in acompanhados if ultima is not None]

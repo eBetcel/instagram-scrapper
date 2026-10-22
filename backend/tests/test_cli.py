@@ -3,17 +3,20 @@ testes apontam para o banco do testcontainer (com commit real e TRUNCATE depois)
 
 from datetime import UTC, datetime, timedelta
 
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.orm import sessionmaker
 from typer.testing import CliRunner
 
 from agenda import cli
+from agenda.extracao.regras import FUSO as FUSO_SP
 from agenda.jobs import enfileirar
-from agenda.models import Evento, EventoFonte, Job, Perfil, Post
+from agenda.models import Evento, EventoFonte, Job, LoteColeta, Perfil, Post
 
 runner = CliRunner()
-TABELAS = "convites, revisoes_evento, evento_fontes, eventos, posts, perfis, jobs"
+TABELAS = "convites, revisoes_evento, evento_fontes, eventos, posts, perfis, jobs, lotes_coleta"
 
 
 @pytest.fixture
@@ -276,3 +279,77 @@ def test_convite_criar_e_listar(fabrica):
         assert c.usos_restantes == 3 and c.expira_em is not None
     r = invocar("convite-listar")
     assert r.exit_code == 0 and "3" in r.output
+
+
+def _lotes(fabrica):
+    with fabrica() as s:
+        return s.scalars(select(LoteColeta).order_by(LoteColeta.id)).all()
+
+
+def test_coletar_perfil_novo_cria_lote_de_30_dias(fabrica):
+    assert invocar("perfil-adicionar", "Casa").exit_code == 0
+    r = invocar("coletar", "--perfil", "@CASA")
+    assert r.exit_code == 0, r.output
+    (lote,) = _lotes(fabrica)
+    assert (lote.tipo, lote.horario, lote.janela, lote.limite, lote.perfis) == (
+        "novos", None, "30 days", 50, ["casa"],
+    )
+    assert f"lote {lote.id}" in r.output.lower()
+    with fabrica() as s:
+        job = s.scalars(select(Job).where(Job.tipo == "coletar_lote")).one()
+        assert job.payload == {"lote_id": lote.id}
+        assert job.chave == f"lote:{lote.id}"
+
+
+def test_coletar_sem_perfil_inclui_todos_os_acompanhados(fabrica):
+    for u in ("nova", "velha", "outra"):
+        assert invocar("perfil-adicionar", u).exit_code == 0
+    with fabrica() as s, s.begin():
+        for p in s.scalars(select(Perfil).where(Perfil.username != "nova")):
+            p.ultima_coleta_em = datetime.now(UTC) - timedelta(hours=5)
+        s.add(Perfil(username="pausada", fixo=True, status="inexistente"))
+    r = invocar("coletar")
+    assert r.exit_code == 0, r.output
+    lotes = _lotes(fabrica)
+    assert [(l.janela, l.limite, l.perfis) for l in lotes] == [
+        ("30 days", 50, ["nova"]),
+        (lotes[1].janela, 20, ["outra", "velha"]),
+    ]
+    assert lotes[1].janela.endswith(" hours") or lotes[1].janela == "30 days"
+    with fabrica() as s:
+        assert len(s.scalars(select(Job).where(Job.tipo == "coletar_lote")).all()) == 2
+
+
+def test_coletar_perfil_desconhecido_falha_com_mensagem(fabrica):
+    r = invocar("coletar", "--perfil", "ninguem")
+    assert r.exit_code != 0
+    assert "ninguem" in r.output and "não cadastrado" in r.output
+    assert _lotes(fabrica) == []
+
+
+def test_lotes_lista_e_soma_o_mes(fabrica):
+    agora = datetime.now(FUSO_SP)
+    mes_passado = agora.replace(day=1) - timedelta(days=2)
+    with fabrica() as s, s.begin():
+        s.add(LoteColeta(
+            tipo="agendado", horario=agora - timedelta(hours=3), janela="12 hours", limite=20,
+            perfis=["a", "b"], status="concluido", posts=10, posts_novos=4,
+            custo_estimado=Decimal("0.0170"), criado_em=agora,
+        ))
+        s.add(LoteColeta(
+            tipo="novos", janela="30 days", limite=50, perfis=["c"], status="concluido",
+            posts=5, posts_novos=5, custo_estimado=Decimal("0.0085"), criado_em=agora,
+        ))
+        s.add(LoteColeta(
+            tipo="novos", janela="30 days", limite=50, perfis=["d"], status="concluido",
+            posts=100, posts_novos=1, custo_estimado=Decimal("0.1700"), criado_em=mes_passado,
+        ))
+    r = invocar("lotes")
+    assert r.exit_code == 0, r.output
+    for coluna in ("id", "tipo", "criado", "status", "perfis", "posts", "novos", "custo"):
+        assert coluna in r.output.splitlines()[0]
+    assert "agendado" in r.output and "concluido" in r.output
+    ultima = r.output.strip().splitlines()[-1]
+    assert "0.0255" in ultima and "mês" in ultima
+    r1 = invocar("lotes", "--ultimos", "1")
+    assert "agendado" not in r1.output and "novos" in r1.output

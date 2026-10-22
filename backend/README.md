@@ -1,8 +1,8 @@
 # Agenda cultural — backend (núcleo de dados e api)
 
-Coleta posts de perfis do Instagram (instaloader), extrai eventos com a OpenAI e os
+Coleta posts de perfis do Instagram pela API da Apify (em lotes), extrai eventos com a OpenAI e os
 reconcilia numa base única de eventos. O Postgres é a fonte da verdade e também a
-fila de jobs: `coletar_perfil` → `extrair_post` → `reconciliar_post`. A api (FastAPI)
+fila de jobs: `coletar_lote` → `extrair_post` → `reconciliar_post`. A api (FastAPI)
 serve o produto web do piloto: convites, login por link mágico, grupos e agenda.
 
 ## Pré-requisitos
@@ -10,8 +10,8 @@ serve o produto web do piloto: convites, login por link mágico, grupos e agenda
 - [uv](https://docs.astral.sh/uv/) (instala o Python 3.12 e as dependências).
 - Docker com Compose (Postgres 16, SeaweedFS como S3 local e Mailpit como SMTP de
   desenvolvimento; os testes também usam Docker via testcontainers).
-- Uma chave da OpenAI e pelo menos uma conta **dedicada** do Instagram para a coleta
-  (nunca use a sua conta pessoal).
+- Uma chave da OpenAI e um token da [Apify](https://apify.com) (a coleta usa o actor
+  `apify/instagram-post-scraper`; não é preciso conta do Instagram).
 
 ## Primeira configuração
 
@@ -26,10 +26,8 @@ docker compose -f ../docker-compose.yml up -d
 
 # 2. Configuração
 cp .env.example .env
-# gere a chave que cifra as sessões do Instagram e cole em CHAVE_SESSAO=
-uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-# preencha também OPENAI_API_KEY; OPENAI_MODELO_EXTRACAO / OPENAI_MODELO_RECONCILIACAO
-# já vêm preenchidos no exemplo
+# preencha OPENAI_API_KEY e APIFY_TOKEN (só no seu .env, nunca no .env.example);
+# OPENAI_MODELO_EXTRACAO / OPENAI_MODELO_RECONCILIACAO já vêm preenchidos no exemplo
 
 # 3. Banco (só precisa de DATABASE_URL)
 uv run alembic upgrade head
@@ -37,27 +35,20 @@ uv run alembic upgrade head
 
 O bucket do S3 é criado automaticamente no primeiro upload.
 
-## Contas de coleta e perfis
+## Coleta (Apify) e perfis
 
-Gere o arquivo de sessão do instaloader com a conta dedicada (pede a senha e, se
-houver, o código de dois fatores) e cadastre-o; a sessão é guardada cifrada com
-`CHAVE_SESSAO`:
-
-```sh
-uv run instaloader --login minha_conta_coleta   # grava a sessão em ~/.config/instaloader/session-minha_conta_coleta
-uv run agenda conta-adicionar minha_conta_coleta --sessao-arquivo ~/.config/instaloader/session-minha_conta_coleta
-```
-
-(Em Linux e macOS o arquivo fica em `$XDG_CONFIG_HOME/instaloader/` ou, sem essa
-variável, em `~/.config/instaloader/`.) Rodar `conta-adicionar` de novo
-atualiza a sessão e reativa uma conta bloqueada.
+Variáveis (veja `.env.example`): `APIFY_TOKEN` (obrigatória para coletar),
+`HORARIOS_COLETA` (padrão `08:00,18:00`, fuso America/Sao_Paulo) e
+`APIFY_PRECO_POR_POST` (padrão `0.0017`, usado só na estimativa de custo). **O limite de
+gasto mensal da conta da Apify é a trava de custo**: configure-o no console da Apify.
 
 Perfis a acompanhar (username sem `@`, minúsculo):
 
 ```sh
 uv run agenda perfil-adicionar casadeshows
 uv run agenda perfil-listar
-uv run agenda coletar                     # força a coleta agora (todos ou --perfil X)
+uv run agenda coletar                     # cria já um lote de coleta (todos os acompanhados ou --perfil X)
+uv run agenda lotes                       # últimos lotes (--ultimos N) e o custo estimado do mês
 ```
 
 Perfis cadastrados pela CLI são "fixos": coletados sempre. Os demais (adicionados a
@@ -94,10 +85,11 @@ uv run agenda worker                      # coleta + extração; pode haver vár
 uv run agenda worker-reconciliacao        # reconciliação: exatamente UM processo
 ```
 
-O `worker` agenda sozinho as coletas devidas (a cada `INTERVALO_COLETA_HORAS`) e
-devolve à fila jobs travados. `--uma-vez` processa o que estiver pronto e sai.
-Quando nenhuma conta de coleta está disponível, o job de coleta é adiado até a
-primeira conta voltar, sem gastar tentativa; bloqueios aparecem no log como ERROR.
+O `worker` agenda sozinho dois lotes de coleta por dia (nos `HORARIOS_COLETA`) e um lote
+imediato para cada @ novo (nunca coletado), e devolve à fila jobs travados. `--uma-vez`
+processa o que estiver pronto e sai; `--tipos coletar_lote` limita a coleta. Se a Apify
+recusar (401/402/403: token inválido, saldo ou limite de gasto), o lote vai para `erro`
+sem retentativa e o log mostra ERROR; falhas de execução da Apify são retentadas.
 
 ## Consultar e corrigir
 
@@ -126,5 +118,5 @@ Chama a OpenAI de verdade e mostra o custo. Formato dos casos e cálculo das not
 uv run pytest -W error -q
 ```
 
-Precisa do Docker rodando (sobe um Postgres descartável); não acessa Instagram nem
-OpenAI.
+Precisa do Docker rodando (sobe um Postgres descartável); não acessa a Apify nem
+a OpenAI.

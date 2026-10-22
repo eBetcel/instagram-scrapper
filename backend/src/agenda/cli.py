@@ -16,7 +16,7 @@ from agenda import texto
 from agenda.db import get_session_factory, session_scope
 from agenda.extracao.regras import FUSO
 from agenda.jobs import reativar_ou_enfileirar
-from agenda.models import Evento, EventoFonte, Perfil, Post
+from agenda.models import Evento, EventoFonte, LoteColeta, Perfil, Post
 from agenda.pipeline import Dependencias
 
 app = typer.Typer(help="Administração do núcleo de dados da agenda cultural.", no_args_is_help=True)
@@ -90,6 +90,56 @@ def perfil_listar() -> None:
         perfis = s.scalars(select(Perfil).order_by(Perfil.username)).all()
         linhas = [(p.username, p.status, _fmt_dt(p.ultima_coleta_em)) for p in perfis]
     _tabela(["perfil", "status", "última coleta"], linhas)
+
+
+@app.command("coletar")
+def coletar(
+    perfil: Annotated[str | None, typer.Option("--perfil", help="Só este perfil (sem: todos os acompanhados).")] = None,
+) -> None:
+    """Cria já um lote de coleta e enfileira (o worker o executa)."""
+    from agenda.coleta.servico import criar_lotes_imediatos, perfis_acompanhados
+
+    agora = datetime.now(UTC)
+    with _sessao() as s:
+        if perfil is not None:
+            username = normalizar_username(perfil)
+            linha = s.execute(
+                select(Perfil.username, Perfil.ultima_coleta_em).where(Perfil.username == username)
+            ).one_or_none()
+            if linha is None:
+                raise _falhar(f"Perfil @{username} não cadastrado (use `agenda perfil-adicionar`).")
+            alvos = [(linha[0], linha[1])]
+        else:
+            alvos = perfis_acompanhados(s)
+        if not alvos:
+            raise _falhar("Nenhum perfil acompanhado para coletar.")
+        lotes = criar_lotes_imediatos(s, agora, alvos)
+        resumo = [(l.id, len(l.perfis), l.janela) for l in lotes]
+    for lote_id, n, janela in resumo:
+        typer.echo(f"Lote {lote_id} criado: {n} perfil(is), janela {janela}.")
+
+
+@app.command("lotes")
+def lotes(
+    ultimos: Annotated[int, typer.Option("--ultimos", min=1, help="Quantos lotes mostrar.")] = 10,
+) -> None:
+    """Lista os últimos lotes de coleta e o custo estimado do mês (fuso de São Paulo)."""
+    inicio_mes = datetime.now(FUSO).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    with _sessao() as s:
+        linhas = [
+            (
+                str(l.id), l.tipo, _fmt_dt(l.criado_em), l.status, str(len(l.perfis)),
+                str(l.posts), str(l.posts_novos), f"{l.custo_estimado:.4f}",
+            )
+            for l in s.scalars(select(LoteColeta).order_by(LoteColeta.id.desc()).limit(ultimos))
+        ]
+        total = s.scalar(
+            select(func.coalesce(func.sum(LoteColeta.custo_estimado), 0)).where(
+                LoteColeta.criado_em >= inicio_mes
+            )
+        )
+    _tabela(["id", "tipo", "criado", "status", "perfis", "posts", "novos", "custo"], linhas)
+    typer.echo(f"Total do mês (custo estimado): US$ {total:.4f}")
 
 
 @app.command("convite-criar")

@@ -15,7 +15,7 @@ cp .env.example .env.local   # API_URL_INTERNA=http://localhost:8010
 npm run dev                  # http://localhost:3000
 ```
 
-Para a carga inicial dos @s novos (coleta, extração e reconciliação) rodam também, em
+Para a carga inicial dos @s novos (coleta via Apify, extração e reconciliação; precisa de `APIFY_TOKEN`) rodam também, em
 terminais separados e com o mesmo `.env` da api: `uv run agenda worker` e
 `uv run agenda worker-reconciliacao`. Sem eles, o @ fica "coletando…" indefinidamente.
 
