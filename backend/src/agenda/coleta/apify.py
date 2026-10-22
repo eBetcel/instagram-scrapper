@@ -73,22 +73,37 @@ class ApifyCliente:
             raise ApifyRecusou(f"Apify recusou {metodo} {caminho}: HTTP {status}")
         if status >= 400:
             raise RuntimeError(f"Apify {metodo} {caminho} falhou: HTTP {status}")
+        if dados is None:
+            raise RuntimeError(f"Apify {metodo} {caminho}: resposta sem JSON")
         return dados
 
+    def _campo(self, dados: Any, chaves: tuple[str, ...], metodo: str, caminho: str):
+        atual = dados
+        for k in chaves:
+            if not isinstance(atual, dict) or k not in atual:
+                raise RuntimeError(
+                    f"Apify {metodo} {caminho}: resposta sem o campo {'.'.join(chaves)}"
+                )
+            atual = atual[k]
+        return atual
+
     def iniciar(self, entrada: dict) -> str:
-        dados = self._chamar("POST", f"/v2/acts/{self._actor_id}/runs", entrada)
-        return dados["data"]["id"]
+        caminho = f"/v2/acts/{self._actor_id}/runs"
+        dados = self._chamar("POST", caminho, entrada)
+        return self._campo(dados, ("data", "id"), "POST", caminho)
 
     def aguardar(
         self, run_id: str, *, timeout: timedelta = timedelta(minutes=15)
     ) -> str:
         inicio = self._relogio()
         while True:
-            dados = self._chamar("GET", f"/v2/actor-runs/{run_id}?waitForFinish=60")
-            run = dados["data"]
-            status = run["status"]
+            caminho = f"/v2/actor-runs/{run_id}?waitForFinish=60"
+            dados = self._chamar("GET", caminho)
+            status = self._campo(dados, ("data", "status"), "GET", caminho)
             if status == "SUCCEEDED":
-                return run["defaultDatasetId"]
+                return self._campo(
+                    dados, ("data", "defaultDatasetId"), "GET", caminho
+                )
             if status in _FINAIS_RUIM:
                 raise ExecucaoFalhou(f"execução {run_id} terminou com {status}")
             if self._relogio() - inicio > timeout.total_seconds():
@@ -99,11 +114,13 @@ class ApifyCliente:
     def itens(self, dataset_id: str) -> list[dict]:
         todos: list[dict] = []
         while True:
-            pagina = self._chamar(
-                "GET",
+            caminho = (
                 f"/v2/datasets/{dataset_id}/items?format=json&clean=true"
-                f"&offset={len(todos)}&limit={_PAGINA}",
+                f"&offset={len(todos)}&limit={_PAGINA}"
             )
+            pagina = self._chamar("GET", caminho)
+            if not isinstance(pagina, list):
+                raise RuntimeError(f"Apify GET {caminho}: página não é uma lista")
             todos.extend(pagina)
             if len(pagina) < _PAGINA:
                 return todos

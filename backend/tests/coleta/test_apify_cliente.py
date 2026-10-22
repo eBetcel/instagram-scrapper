@@ -148,3 +148,39 @@ def test_transporte_urllib_envia_json_e_cabecalhos(servidor):
 def test_transporte_urllib_devolve_status_de_erro_sem_levantar(servidor):
     status, _ = transporte_urllib("GET", servidor + "/erro", None, {})
     assert status == 429
+
+
+def test_transporte_urllib_2xx_sem_json_devolve_none(servidor, monkeypatch):
+    class R:
+        status = 200
+
+        def read(self):
+            return b"<html>ok</html>"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(urllib.request, "urlopen", lambda *a, **k: R())
+    assert transporte_urllib("GET", servidor + "/x", None, {}) == (200, None)
+
+
+def test_iniciar_2xx_sem_json_levanta_erro_claro():
+    c, _ = cliente([(201, None)])
+    with pytest.raises(RuntimeError, match="sem JSON") as e:
+        c.iniciar({})
+    assert TOKEN not in str(e.value)
+
+
+def test_aguardar_resposta_sem_status_levanta_erro_claro():
+    c, _ = cliente([(200, {"data": {"id": "r1"}})])
+    with pytest.raises(RuntimeError, match="data.status"):
+        c.aguardar("r1")
+
+
+def test_itens_pagina_que_nao_e_lista_levanta_erro_claro():
+    c, _ = cliente([(200, {"data": []})])
+    with pytest.raises(RuntimeError, match="lista"):
+        c.itens("ds1")
