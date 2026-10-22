@@ -13,12 +13,17 @@ mensagens de erro.
 from __future__ import annotations
 
 import json
+import logging
 import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable
-from datetime import timedelta
-from typing import Any
+from datetime import UTC, datetime, timedelta
+from typing import Any, Literal
+
+from agenda.coleta.base import PostColetado, ResultadoLote
+
+log = logging.getLogger(__name__)
 
 Transporte = Callable[[str, str, "dict | None", "dict[str, str]"], "tuple[int, Any]"]
 
@@ -124,3 +129,109 @@ class ApifyCliente:
             todos.extend(pagina)
             if len(pagina) < _PAGINA:
                 return todos
+
+
+def classificar_erro(mensagem: str) -> Literal["privado", "inexistente"] | None:
+    """Classifica a mensagem guardada em ``ResultadoLote.erros``.
+
+    Apify não dá sinal confiável de perfil privado ("Empty or private data" é
+    ambíguo), então só mensagens que dizem claramente "private" viram "privado".
+    """
+    m = mensagem.lower()
+    if "does not exist" in m or m.strip() == "not_found":
+        return "inexistente"
+    if "empty or private" in m:
+        return None
+    if "private" in m:
+        return "privado"
+    return None
+
+
+def _username_do_erro(item: dict) -> str | None:
+    if item.get("username"):
+        return str(item["username"]).lower()
+    for chave in ("inputUrl", "url"):
+        url = item.get(chave)
+        if url:
+            seg = str(url).rstrip("/").rsplit("/", 1)[-1]
+            if seg:
+                return seg.lower()
+    return None
+
+
+def converter_itens(itens: list[dict], usernames: list[str]) -> ResultadoLote:
+    """Converte itens do dataset em posts agrupados por perfil pedido.
+
+    Atribuição: ``ownerUsername`` (minúsculo) se foi pedido; senão o primeiro
+    pedido presente em ``coauthorProducers[].username``; senão descarta (WARNING).
+    Itens ``no_items`` são descartados (INFO). Os demais itens com ``error``
+    entram em ``erros[username]`` com o texto de ``errorDescription`` (ou o
+    código ``error`` se não houver), que ``classificar_erro`` sabe interpretar.
+    """
+    pedidos = {u.lower() for u in usernames}
+    resultado = ResultadoLote()
+    vistos: set[str] = set()
+    for item in itens:
+        erro = item.get("error")
+        if erro:
+            alvo = _username_do_erro(item)
+            if erro == "no_items":
+                log.info("sem posts novos (ou perfil privado) para %s", alvo)
+            elif alvo:
+                resultado.erros[alvo] = str(item.get("errorDescription") or erro)
+            else:
+                log.warning("item de erro sem username identificável: %s", erro)
+            continue
+        shortcode = item.get("shortCode")
+        timestamp = item.get("timestamp")
+        if not shortcode or not timestamp:
+            log.warning("item descartado sem shortCode/timestamp: %s", shortcode)
+            continue
+        dono = str(item.get("ownerUsername") or "").lower()
+        perfil = dono if dono in pedidos else None
+        if perfil is None:
+            for co in item.get("coauthorProducers") or []:
+                nome = str(co.get("username") or "").lower()
+                if nome in pedidos:
+                    perfil = nome
+                    break
+        if perfil is None:
+            log.warning("post %s de %r não pertence a perfil pedido", shortcode, dono)
+            continue
+        if shortcode in vistos:
+            continue
+        vistos.add(shortcode)
+        imagens = item.get("images") or (
+            [item["displayUrl"]] if item.get("displayUrl") else []
+        )
+        resultado.posts.append(
+            PostColetado(
+                shortcode=shortcode,
+                legenda=item.get("caption") or "",
+                publicado_em=datetime.fromisoformat(timestamp).astimezone(UTC),
+                urls_imagens=list(imagens),
+                perfil=perfil,
+            )
+        )
+    return resultado
+
+
+class ApifyColetor:
+    def __init__(self, cliente: ApifyCliente) -> None:
+        self._cliente = cliente
+
+    def coletar(
+        self, usernames: list[str], *, janela: str, limite: int
+    ) -> ResultadoLote:
+        entrada = {
+            "username": list(usernames),
+            "onlyPostsNewerThan": janela,
+            "resultsLimit": limite,
+            "skipPinnedPosts": True,
+            "dataDetailLevel": "basicData",
+        }
+        run_id = self._cliente.iniciar(entrada)
+        dataset_id = self._cliente.aguardar(run_id)
+        resultado = converter_itens(self._cliente.itens(dataset_id), usernames)
+        resultado.run_ids = [run_id]
+        return resultado
