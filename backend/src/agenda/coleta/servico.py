@@ -32,6 +32,7 @@ HORARIOS_PADRAO = parse_horarios(HORARIOS_COLETA_PADRAO)
 LIMITE_AGENDADO = 20
 LIMITE_NOVOS = 50
 JANELA_NOVOS = "30 days"
+JANELA_MAXIMA_HORAS = 30 * 24
 # Lote de novos em erro, ou perfil que já esteve num lote de novos, só volta depois disso,
 # contado a partir do fim do lote: coalesce(concluido_em, criado_em) (R11). `agendar_lotes`
 # grava `criado_em = agora` e o worker grava `concluido_em` com o mesmo relógio (deps.relogio).
@@ -58,12 +59,29 @@ def ultimo_horario(agora: datetime, horarios: Sequence[time]) -> datetime:
     return max(c for c in candidatos if c <= local)
 
 
-def janela_agendada(ultimo_concluido: datetime | None, agora: datetime) -> str:
-    """Horas desde o último lote agendado concluído + 1 h, para cima; sem anterior, 30 dias."""
-    if ultimo_concluido is None:
+def janela_agendada(desde: datetime | None, agora: datetime) -> str:
+    """Horas desde `desde` + 1 h, para cima, até 30 dias; sem `desde` (ou além), 30 dias."""
+    if desde is None:
         return JANELA_NOVOS
-    horas = max(0, math.ceil((agora - ultimo_concluido) / timedelta(hours=1)))
-    return f"{horas + 1} hours"
+    horas = max(0, math.ceil((agora - desde) / timedelta(hours=1))) + 1
+    if horas > JANELA_MAXIMA_HORAS:
+        return JANELA_NOVOS
+    return f"{horas} hours"
+
+
+def _inicio_da_janela(s: Session, ultimas: Sequence[datetime | None]) -> datetime | None:
+    """`concluido_em` do último lote agendado concluído; sem nenhum, a `ultima_coleta_em`
+    mais antiga dos perfis do lote (R17): logo após o lote de novos, ou na troca para esta
+    versão, não recoleta 30 dias de quem acabou de ser coletado."""
+    ultimo_concluido = s.scalar(
+        select(func.max(LoteColeta.concluido_em)).where(
+            LoteColeta.tipo == "agendado", LoteColeta.status == "concluido"
+        )
+    )
+    if ultimo_concluido is not None:
+        return ultimo_concluido
+    coletadas = [u for u in ultimas if u is not None]
+    return min(coletadas) if coletadas else None
 
 
 def perfis_acompanhados(s: Session) -> list[tuple[str, datetime | None]]:
@@ -86,19 +104,15 @@ def criar_lotes_imediatos(
     limite 50) e outro para os já coletados (janela agendada, limite 20)."""
     nunca = [u for u, ultima in perfis if ultima is None]
     coletados = [u for u, ultima in perfis if ultima is not None]
+    ultimas = [ultima for _, ultima in perfis if ultima is not None]
     lotes: list[LoteColeta] = []
     if nunca:
         lotes.append(LoteColeta(
             tipo="novos", janela=JANELA_NOVOS, limite=LIMITE_NOVOS, perfis=nunca, criado_em=agora
         ))
     if coletados:
-        ultimo_concluido = s.scalar(
-            select(func.max(LoteColeta.concluido_em)).where(
-                LoteColeta.tipo == "agendado", LoteColeta.status == "concluido"
-            )
-        )
         lotes.append(LoteColeta(
-            tipo="novos", janela=janela_agendada(ultimo_concluido, agora),
+            tipo="novos", janela=janela_agendada(_inicio_da_janela(s, ultimas), agora),
             limite=LIMITE_AGENDADO, perfis=coletados, criado_em=agora,
         ))
     s.add_all(lotes)
@@ -126,17 +140,13 @@ def agendar_lotes(
 
     coletados = [u for u, ultima in acompanhados if ultima is not None]
     if coletados and horarios:
-        ultimo_concluido = s.scalar(
-            select(func.max(LoteColeta.concluido_em)).where(
-                LoteColeta.tipo == "agendado", LoteColeta.status == "concluido"
-            )
-        )
+        inicio = _inicio_da_janela(s, [ultima for _, ultima in acompanhados])
         lote_id = s.execute(
             insert(LoteColeta)
             .values(
                 tipo="agendado",
                 horario=ultimo_horario(agora, horarios),
-                janela=janela_agendada(ultimo_concluido, agora),
+                janela=janela_agendada(inicio, agora),
                 limite=LIMITE_AGENDADO,
                 perfis=coletados,
                 criado_em=agora,

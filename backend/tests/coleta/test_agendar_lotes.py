@@ -5,7 +5,12 @@ import pytest
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import sessionmaker
 
-from agenda.coleta.servico import agendar_lotes, janela_agendada, ultimo_horario
+from agenda.coleta.servico import (
+    agendar_lotes,
+    criar_lotes_imediatos,
+    janela_agendada,
+    ultimo_horario,
+)
 from agenda.config import Settings, parse_horarios
 from agenda.extracao.regras import FUSO
 from agenda.models import Grupo, GrupoPerfil, Job, LoteColeta, Perfil, Usuario
@@ -67,6 +72,40 @@ def test_janela_agendada():
     assert janela_agendada(agora - timedelta(hours=10, minutes=20), agora) == "12 hours"
     assert janela_agendada(agora - timedelta(hours=10), agora) == "11 hours"
     assert janela_agendada(None, agora) == "30 days"
+    assert janela_agendada(agora - timedelta(hours=719), agora) == "720 hours"
+    assert janela_agendada(agora - timedelta(hours=719, minutes=1), agora) == "30 days"
+    assert janela_agendada(agora - timedelta(days=90), agora) == "30 days"
+
+
+def test_sem_agendado_concluido_janela_parte_da_coleta_mais_antiga_do_lote(session):
+    # Logo depois do lote de novos (ou na troca para esta versão): não recoleta 30 dias.
+    _perfil(session, "a")  # coletado em sp(1, 0)
+    b = _perfil(session, "b")
+    b.ultima_coleta_em = sp(2, 6)
+    session.add(LoteColeta(tipo="agendado", horario=sp(1, 18), janela="x", limite=20,
+                           perfis=["a"], status="erro"))
+    session.flush()
+    [lote_id] = agendar_lotes(session, sp(2, 8, 30), HORARIOS)
+    assert session.get(LoteColeta, lote_id).janela == "34 hours"  # 32h30 -> 33 + 1
+
+
+def test_sem_agendado_concluido_coleta_antiga_limita_a_30_dias(session):
+    p = _perfil(session, "a")
+    p.ultima_coleta_em = sp(2, 8) - timedelta(days=45)
+    session.flush()
+    [lote_id] = agendar_lotes(session, sp(2, 8, 30), HORARIOS)
+    assert session.get(LoteColeta, lote_id).janela == "30 days"
+
+
+def test_lote_imediato_de_coletados_tambem_parte_da_coleta_mais_antiga(session):
+    _perfil(session, "a")  # coletado em sp(1, 0)
+    _perfil(session, "n", coletado=False)
+    lotes = criar_lotes_imediatos(
+        session, sp(1, 10), [("a", sp(1, 0)), ("n", None)]
+    )
+    assert [(l.janela, l.perfis) for l in lotes] == [
+        ("30 days", ["n"]), ("11 hours", ["a"]),
+    ]
 
 
 def test_parse_horarios():
